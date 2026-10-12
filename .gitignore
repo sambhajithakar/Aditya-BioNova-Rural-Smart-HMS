@@ -1,0 +1,39 @@
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Secrets & env — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Node
+node_modules/
+.next/
+out/
+npm-debug.log*
+
+# Local tooling (extracted PostgreSQL, data dirs)
+.local/
+pgdata/
+*.log
+
+# Test artifacts
+test-results/
+playwright-report/

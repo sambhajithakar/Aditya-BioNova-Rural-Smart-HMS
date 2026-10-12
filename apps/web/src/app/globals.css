@@ -1,0 +1,163 @@
+/* Aditya BioNova design system — navy / teal / white, accessible defaults. */
+:root {
+  --navy-900: #06223a;
+  --navy-800: #0b3a5d;
+  --navy-700: #14507c;
+  --teal-600: #0f766e;
+  --teal-500: #12938a;
+  --teal-100: #dff5f2;
+  --white: #ffffff;
+  --surface: #f6f9fc;
+  --border: #d7e1ea;
+  --text: #10243a;
+  --text-muted: #52677d;
+  --danger: #b42318;
+  --success: #067647;
+  --radius: 10px;
+  --shadow: 0 1px 3px rgba(6, 34, 58, 0.12);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--surface);
+  color: var(--text);
+  font-family: "Inter", "Noto Sans Devanagari", "Segoe UI", system-ui, -apple-system,
+    sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+a { color: var(--navy-700); }
+
+:focus-visible {
+  outline: 3px solid var(--teal-500);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.app-header {
+  background: var(--navy-800);
+  color: var(--white);
+  padding: 0.75rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.app-header .brand { font-weight: 700; letter-spacing: 0.2px; }
+.app-header .spacer { flex: 1; }
+.app-header .context { font-size: 0.9rem; opacity: 0.92; }
+
+.lang-switch {
+  display: inline-flex;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.lang-switch button {
+  border: 0;
+  background: transparent;
+  color: var(--white);
+  padding: 0.45rem 0.85rem;
+  font-size: 0.95rem;
+  cursor: pointer;
+  min-height: 40px; /* large touch target */
+}
+.lang-switch button[aria-pressed="true"] { background: var(--teal-600); }
+
+.layout-nav {
+  display: flex;
+  gap: 0.25rem;
+  background: var(--white);
+  border-bottom: 1px solid var(--border);
+  padding: 0.4rem 1rem;
+  overflow-x: auto;
+}
+.layout-nav a {
+  text-decoration: none;
+  color: var(--text-muted);
+  padding: 0.6rem 0.9rem;
+  border-radius: var(--radius);
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.layout-nav a.active, .layout-nav a:hover { background: var(--teal-100); color: var(--navy-800); }
+
+main.page { padding: 1.5rem; max-width: 1100px; margin: 0 auto; }
+
+.card {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.25rem;
+}
+.grid { display: grid; gap: 1rem; }
+.grid.kpis { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+
+.kpi .value { font-size: 2rem; font-weight: 800; color: var(--navy-800); }
+.kpi .label { color: var(--text-muted); font-weight: 600; }
+
+form.stack { display: grid; gap: 1rem; max-width: 420px; }
+label.field { display: grid; gap: 0.35rem; font-weight: 600; }
+input[type="email"], input[type="password"], input[type="text"] {
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 1rem;
+  min-height: 44px;
+  background: var(--white);
+  color: var(--text);
+}
+button.primary {
+  background: var(--teal-600);
+  color: var(--white);
+  border: 0;
+  border-radius: var(--radius);
+  padding: 0.75rem 1.25rem;
+  font-size: 1rem;
+  font-weight: 700;
+  min-height: 46px;
+  cursor: pointer;
+}
+button.primary:hover { background: var(--teal-500); }
+button.ghost {
+  background: transparent;
+  color: var(--white);
+  border: 1px solid rgba(255,255,255,0.5);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.9rem;
+  min-height: 40px;
+  cursor: pointer;
+}
+
+.error {
+  color: var(--danger);
+  background: #fef3f2;
+  border: 1px solid #fecdca;
+  border-radius: var(--radius);
+  padding: 0.7rem 0.9rem;
+}
+.notice {
+  color: var(--navy-800);
+  background: var(--teal-100);
+  border: 1px solid var(--teal-500);
+  border-radius: var(--radius);
+  padding: 0.7rem 0.9rem;
+}
+.muted { color: var(--text-muted); }
+.tag {
+  display: inline-block;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  margin: 0.1rem 0.25rem 0.1rem 0;
+  font-size: 0.85rem;
+}

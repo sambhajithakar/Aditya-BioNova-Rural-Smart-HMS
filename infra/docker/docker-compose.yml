@@ -1,0 +1,51 @@
+# Local/staging stack. Usage (from repo root):
+#   docker compose -f infra/docker/docker-compose.yml up --build
+# NEVER use these default passwords outside local development.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: hms
+      POSTGRES_PASSWORD: ${HMS_PG_PASSWORD:-change_me}
+      POSTGRES_DB: hms_dev
+      HMS_APP_PASSWORD: ${HMS_APP_PASSWORD:-change_me}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hms -d hms_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  api:
+    build:
+      context: ../..
+      dockerfile: infra/docker/api.Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg2://hms_app:${HMS_APP_PASSWORD:-change_me}@postgres:5432/hms_dev
+      MIGRATION_DATABASE_URL: postgresql+psycopg2://hms:${HMS_PG_PASSWORD:-change_me}@postgres:5432/hms_dev
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in an untracked .env file}
+      ENVIRONMENT: development
+      CORS_ORIGINS: '["http://localhost:3000"]'
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ../..
+      dockerfile: infra/docker/web.Dockerfile
+    environment:
+      API_ORIGIN: http://api:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
