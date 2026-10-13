@@ -1,5 +1,46 @@
 # Changelog
 
+## M3 (2026-10-13) — Consultation → Prescription → Billing → Receipt
+
+### Added
+- **Consultation workspace**: encounters with a one-open-per-patient guard,
+  range-checked vitals (BP/pulse/Temp/SpO₂/RR/weight/height), structured
+  diagnoses (code/label/kind/status), close flow that completes the linked
+  queue entry. Completed encounters are frozen by a database trigger.
+- **Prescriptions**: draft → sign workflow for `prescription.sign` holders
+  only; every item must reference the validated `drug_catalog` (45 seeded
+  drugs — free-text medication entry is impossible by construction);
+  **allergy check blocks signing** unless the prescriber explicitly
+  acknowledges it (acknowledgement persisted + audited); duplicate-drug
+  warnings are advisory; **versioned amendments** insert version N+1 and
+  flip the previous row to `superseded` — the only UPDATE the DB trigger
+  permits after signing; signed rows can never change or be deleted.
+- **Billing**: invoices with **server-computed totals** and per-tenant
+  `INV-000001` numbering (advisory lock), freeze-on-issue for financials
+  and line items, issue/void with reversing adjustment, **append-only
+  financial ledger** (trigger + revoked grants + unique partial indexes
+  that make double-posting impossible), payments with
+  **`Idempotency-Key`** support, bounded refunds (partial → fully
+  refunded), printable receipt with ledger reconciliation, and a
+  **sandbox payment gateway spike** (pending → confirm/fail callbacks).
+- **Print**: A4 trilingual (EN/मराठी/हिंदी) prescription and receipt views
+  at `/print/rx/[id]` using the browser print pipeline (Save as PDF).
+- **Web**: `/consultation` (vitals, diagnosis, safety-gated signing) and
+  `/billing` (invoice → issue → payment → receipt) pages with full
+  EN/मराठी/हिंदी strings; navigation updated.
+- **RBAC**: 8 new permissions across 6 roles; support and auditor receive
+  no clinical or financial access (least privilege).
+- **Tests**: 24 new (72 total) — cross-tenant 404s, raw RLS proofs,
+  raw-SQL immutability proofs for signed Rx / completed encounters /
+  issued invoices / the ledger, RBAC matrix, idempotency replay, refund
+  bounds, and the full E2E acceptance chain with audit assertions.
+
+### Fixed
+- Ledger balance used `func.case` (not a SQLAlchemy function) — now the
+  top-level `case()` construct.
+- Ledger-consistency invariant now accounts for voided invoices (fully
+  reversed by their adjustment entry).
+
 ## M2 (2026-10-13) — Registration → Appointments → OPD queue
 
 ### Added

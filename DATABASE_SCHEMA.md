@@ -138,6 +138,10 @@ GUC expressions (set per transaction by `set_request_context()`):
 | appointments | ALL | appointments_tenant | `organization_id = GUC_ORG` |
 | opd_queue | ALL | opd_queue_tenant | `organization_id = GUC_ORG` |
 | idempotency_keys | ALL | idempotency_keys_tenant | `organization_id = GUC_ORG` |
+| encounters, encounter_vitals, encounter_diagnoses | ALL | `<table>_tenant` | `organization_id = GUC_ORG` |
+| prescriptions, prescription_items | ALL | `<table>_tenant` | `organization_id = GUC_ORG` |
+| invoices, invoice_items, payments, refunds | ALL | `<table>_tenant` | `organization_id = GUC_ORG` |
+| ledger_entries | SELECT/INSERT only (UPDATE/DELETE revoked) | `ledger_entries_tenant` | `organization_id = GUC_ORG` |
 
 Write-guard for audit rows is also enforced inside
 `insert_audit_event()` (SECURITY DEFINER), so a compromised app role still
@@ -159,9 +163,41 @@ cannot forge another tenant's audit history.
 Rule: measure query plans on real workload before adding more (no
 speculative over-indexing).
 
-## Known schema follow-ups (M3+)
-- encounters, vitals, diagnosis, prescriptions, invoices (Blueprint §6).
+## M3 tables (migration 0006)
+
+| Table | Purpose | RLS policy |
+|---|---|---|
+| `encounters` | OPD consultation (open → completed) | `encounters_tenant` |
+| `encounter_vitals` | BP/pulse/Temp/SpO₂/RR/weight/height with range CHECKs | `encounter_vitals_tenant` |
+| `encounter_diagnoses` | structured diagnosis (code, label, primary/secondary, suspected/confirmed/ruled_out) | `encounter_diagnoses_tenant` |
+| `drug_catalog` | **global** validated drug reference (45 seeded rows), read-only for `hms_app` | none (reference data) |
+| `prescriptions` | versioned Rx: draft → signed → superseded | `prescriptions_tenant` |
+| `prescription_items` | one row per medicine, FK to `drug_catalog` (free-text entry impossible) | `prescription_items_tenant` |
+| `invoices` + `invoice_items` | billing document; totals computed server-side | `invoices_tenant` / `invoice_items_tenant` |
+| `payments` + `refunds` | manual or `sandbox` gateway, state machine pending→succeeded/failed, refund bounds | `payments_tenant` / `refunds_tenant` |
+| `ledger_entries` | append-only financial ledger | `ledger_entries_tenant` |
+
+**Immutability guarantees (DB triggers, proven by raw-SQL tests):**
+
+- `trg_rx_immutable` — a signed prescription cannot change: the only legal
+  UPDATE is `signed → superseded` with every other column byte-identical
+  (amendments therefore insert version N+1); DELETE blocked for non-draft.
+- `trg_rxitem_immutable` — items follow their prescription's status.
+- `trg_enc_completed_immutable` — a completed encounter is frozen.
+- `trg_inv_issued_frozen` / `trg_invitem_frozen` — invoice financials and
+  line items freeze on issue.
+- `trg_ledger_append_only` + `REVOKE UPDATE, DELETE` — the ledger is
+  append-only exactly like `audit_events`; unique partial indexes
+  (`uq_ledger_charge_per_invoice`, `uq_ledger_payment_once`,
+  `uq_ledger_refund_once`, `uq_ledger_void_per_invoice`) make double
+  posting impossible even under races.
+
+**M3 RBAC:** 8 permissions (`encounter.read/write`, `prescription.read/sign`,
+`billing.read/invoice/payment/refund`) across 6 roles. Only doctor/owner/admin
+hold `prescription.sign`; support and auditor receive **no** M3 permissions.
+
+## Known schema follow-ups (M4+)
 - `updated_at` triggers (currently app-managed).
 - FHIR/ABDM mapping tables when that phase starts.
-- Timezone: service_date is UTC date; facility-local day boundary lands
-  with scheduling polish (M3).
+- Timezone: `service_date` uses the UTC day; facility-local day boundary
+  lands with scheduling polish.

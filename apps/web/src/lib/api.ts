@@ -135,3 +135,175 @@ export type QueueEntry = {
 export type PageOf<T> = { items: T[]; total: number; limit: number; offset: number };
 
 export type Branch = { id: string; name: string; code: string; status: string };
+
+// --- M3 clinical + billing types --------------------------------------------
+export type Encounter = {
+  id: string;
+  organization_id: string;
+  branch_id: string;
+  patient_id: string;
+  appointment_id: string | null;
+  queue_entry_id: string | null;
+  provider_user_id: string | null;
+  chief_complaint: string;
+  history: string;
+  examination: string;
+  assessment: string;
+  plan: string;
+  status: string;
+  started_at: string;
+  ended_at: string | null;
+  created_at: string;
+};
+
+export type Vitals = {
+  id: string;
+  encounter_id: string;
+  bp_systolic: number | null;
+  bp_diastolic: number | null;
+  pulse: number | null;
+  temperature_c: number | null;
+  spo2: number | null;
+  respiratory_rate: number | null;
+  weight_kg: number | null;
+  height_cm: number | null;
+  notes: string;
+  recorded_at: string;
+};
+
+export type Diagnosis = {
+  id: string;
+  encounter_id: string;
+  code: string;
+  label: string;
+  kind: string;
+  status: string;
+  created_at: string;
+};
+
+export type EncounterDetail = Encounter & {
+  vitals: Vitals[];
+  diagnoses: Diagnosis[];
+  prescription_ids: string[];
+};
+
+export type Drug = {
+  id: string;
+  generic_name: string;
+  brand_hint: string;
+  drug_class: string;
+};
+
+export type RxItem = {
+  id: string;
+  prescription_id: string;
+  drug_id: string;
+  dose: string;
+  route: string;
+  frequency: string;
+  duration_days: number;
+  quantity: string;
+  instructions: string;
+  seq: number;
+};
+
+export type Prescription = {
+  id: string;
+  organization_id: string;
+  encounter_id: string | null;
+  patient_id: string;
+  prescriber_user_id: string | null;
+  status: string;
+  version: number;
+  supersedes_id: string | null;
+  diagnosis_text: string;
+  advice: string;
+  follow_up: string;
+  allergy_acknowledged: boolean;
+  signed_at: string | null;
+  amendment_reason: string;
+  created_at: string;
+};
+
+export type PrescriptionDetail = Prescription & { items: RxItem[] };
+
+export type RxWarning = { kind: string; message: string; drug_ids: string[] };
+export type RxWarnings = { warnings: RxWarning[]; blocking: boolean };
+
+export type InvoiceItem = {
+  id: string;
+  invoice_id: string;
+  item_type: string;
+  description: string;
+  quantity: number;
+  unit_price: number;
+  tax_rate: number;
+  line_total: number;
+  seq: number;
+};
+
+export type Invoice = {
+  id: string;
+  organization_id: string;
+  branch_id: string;
+  patient_id: string;
+  encounter_id: string | null;
+  invoice_number: string;
+  status: string;
+  subtotal: number;
+  discount: number;
+  tax_total: number;
+  total: number;
+  amount_paid: number;
+  notes: string;
+  issued_at: string | null;
+  created_at: string;
+};
+
+export type Payment = {
+  id: string;
+  invoice_id: string;
+  amount: number;
+  method: string;
+  gateway: string;
+  status: string;
+  gateway_ref: string;
+  failure_reason: string;
+  created_at: string;
+};
+
+export type InvoiceDetail = Invoice & { items: InvoiceItem[]; payments: Payment[] };
+
+export type Refund = {
+  id: string;
+  payment_id: string;
+  amount: number;
+  reason: string;
+  status: string;
+  created_at: string;
+};
+
+export type LedgerEntry = {
+  id: number;
+  invoice_id: string;
+  payment_id: string | null;
+  refund_id: string | null;
+  entry_type: string;
+  direction: string;
+  amount: number;
+  description: string;
+  created_at: string;
+};
+
+export type Receipt = {
+  invoice: Invoice;
+  items: InvoiceItem[];
+  payments: Payment[];
+  refunds: Refund[];
+  ledger: LedgerEntry[];
+  balance_due: number;
+  org_name: string;
+  branch_name: string;
+  patient_name: string;
+  patient_uhid: string;
+};

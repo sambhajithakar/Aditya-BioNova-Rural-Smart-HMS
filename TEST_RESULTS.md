@@ -134,3 +134,89 @@ cd apps/api && ../../.venv/bin/python -m pytest -v
 - Translation QA: M2 strings translated programmatically; native-speaker
   review still pending.
 - `service_date` uses the UTC day; facility-local day boundary is M3.
+
+---
+
+# M3 results (2026-10-13) — consultation → prescription → billing → receipt
+
+**Suite: 72 passed, 0 failed (7.84 s)** — 33 M1 + 15 M2 + 24 new M3.
+Lint `ruff check apps/api --select F,E --line-length 100` clean;
+`tsc --noEmit` clean; `next build` green (11 routes); OpenAPI snapshot
+regenerated (20 → 42 paths).
+
+## New M3 coverage (`tests/test_m3_clinical_billing.py`, 24 tests)
+
+**Consultation**
+- encounter flow: start → vitals → diagnosis → complete; second open
+  encounter for the same patient → 409; out-of-range vitals and
+  systolic ≤ diastolic → 422; edits after completion → 409 (DB trigger)
+- cross-tenant: org B GET/PATCH/complete of org A's encounter → 404;
+  org B's list never contains it
+- raw RLS: without `app.current_org_id`, `encounters`, `encounter_vitals`,
+  `prescriptions`, `invoices`, `payments`, `ledger_entries` all return 0
+  rows; with a foreign org context the encounter is invisible
+
+**Prescription (blueprint §R3.5)**
+- only `prescription.sign` holders draft/sign (receptionist → 403)
+- allergy gate: penicillin-allergic patient + amoxicillin → blocking
+  warning; sign without acknowledgement → 409; explicit acknowledgement →
+  200 with `allergy_acknowledged=true` (audited)
+- duplicate-drug → advisory (`blocking: false`), still signable
+- unknown drug id → 422 `Unknown or inactive drug(s)` — no free-text meds
+- signed Rx immutability proven with raw SQL as `hms_app`:
+  content UPDATE → `immutable`, item UPDATE → `immutable`,
+  DELETE → `immutable`, and the row is byte-unchanged afterwards
+- amendment: creates signed v2 with `supersedes_id`; old row →
+  `superseded` retaining its original items; amending a superseded row →
+  409; `prescription.signed` + `prescription.amended` present in audit
+- double-sign → 409; empty items → 422
+
+**Billing**
+- server-side totals (subtotal 267.50, 12% tax on the pharmacy line →
+  8.10); discount > subtotal → 422; per-tenant numbering `INV-000001`
+- freeze-on-issue proven raw: invoice `total` UPDATE → `frozen`,
+  line-item UPDATE → `immutable`; re-issue → 409
+- payment idempotency: same key+payload → replayed payment id, ledger has
+  exactly ONE credit, `amount_paid` counted once; same key + different
+  payload → 409; amount > balance → 422; paying a draft → 409
+- sandbox gateway: pending → confirm → succeeded (double confirm → 409);
+  fail → `failed` with no ledger credit and balance unchanged
+- refunds: over-refund → 422; partial → `partially_refunded`; full →
+  `refunded`; one cent over the remainder → 422; further refund blocked
+- ledger append-only proven raw: UPDATE/DELETE → blocked (REVOKE or
+  `append-only` trigger); void of an unpaid issued invoice posts
+  `charge` + `adjustment` and the receipt balance is 0
+- ledger invariant: debits − credits == `total − amount_paid` for a
+  charged/paid/refunded invoice
+- cross-tenant: B cannot GET the invoice/receipt/ledger, issue it or
+  refund its payment (all 404); B's own numbering restarts at 1
+- RBAC matrix: receptionist invoices but cannot refund (403); billing role
+  refunds but cannot open encounters (403); support/auditor get 403 on
+  billing, encounters and prescriptions; doctor reads clinical data but
+  cannot invoice (403)
+
+**E2E acceptance chain** — register → token → call → encounter → vitals →
+diagnosis → warnings block → acknowledge → sign → complete (queue
+auto-completes) → invoice → issue → sandbox pay → confirm → receipt with
+`balance_due == 0` and ledger `[charge, payment]`; all nine audit actions
+present in the trail.
+
+## Defects found & fixed during M3
+1. **`func.case` misuse** — the ledger balance query used `func.case(...)`;
+   SQLAlchemy's `case()` is a top-level construct. Fixed at the source.
+2. **Raw-SQL test harness** — `set_config(..., is_local=true)` is
+   transaction-scoped, so `autocommit=True` silently dropped the RLS GUC
+   and the guards "passed" vacuously (UPDATE matched 0 rows). Tests now run
+   in one transaction with SAVEPOINT recovery (`_expect_blocked`).
+3. **Void receipt 500** — the ledger-consistency invariant assumed
+   `total − amount_paid`, but a voided invoice is fully reversed by its
+   adjustment entry. Invariant now special-cases `status == "void"`.
+4. (test-only) `_draft` built one item from `drugs[0]`, so the E2E never
+   actually prescribed the second (allergy-triggering) drug.
+
+## M3 known gaps
+- Playwright E2E still not started (headless browser in CI).
+- Sandbox gateway is a local simulation; no provider webhook signature
+  verification yet — that lands with the real sandbox gateway (M7).
+- A5 print size is CSS-ready but not verified on a physical printer.
+- Translation QA review by a native speaker still pending.

@@ -23,19 +23,22 @@ Final Product Layout & Competitor Study 2026) plus the Master Prompt.
 - R2.5 ⬜ MFA for privileged users, SSO/OIDC (M7), password reset emails.
 
 ## 3. Clinical scope (phased)
-- R3.1 ⬜ M2: patient registration + duplicate detection, appointments/tokens,
-  OPD queue, doctor workspace, vitals, structured e-prescription (sign/amend),
-  printable A4/A5 trilingual Rx.
-- R3.2 ⬜ M3: billing, invoices, receipts, refunds, idempotent payments,
-  notifications.
+- R3.1 ✅ M2+M3: patient registration + duplicate detection,
+  appointments/tokens, OPD queue (M2); doctor workspace, vitals, structured
+  e-prescription (sign/amend) with allergy gate, printable A4 trilingual Rx
+  (M3). A5 paper-size print preset is CSS-ready but untested on hardware.
+- R3.2 ✅ M3 (minus notifications): billing, invoices, receipts, refunds,
+  idempotent payments, append-only ledger, sandbox gateway spike.
+  Notifications ⬜ — blocked on the e-mail provider decision (M7 gate).
 - R3.3 ⬜ M5: pharmacy (stock/batch/expiry/FEFO), laboratory (orders,
   specimens, two-stage result verification).
 - R3.4 ⬜ M6: IPD admissions, wards, beds, nursing, discharge; inventory,
   expenses, reports.
-- R3.5 ⬜ Non-negotiable clinical rules (from Blueprint): no silent
-  post-sign changes (versioned amendments + audit), no automatic medication
-  selection from symptoms, allergy checks before prescribing, only authorized
-  practitioners sign prescriptions.
+- R3.5 ✅ Non-negotiable clinical rules (from Blueprint): no silent
+  post-sign changes (DB-trigger-enforced versioned amendments + audit), no
+  medication selection from symptoms (nothing in the code maps symptoms to
+  drugs), allergy checks before prescribing (blocking + acknowledged), only
+  `prescription.sign` holders (doctor/owner/admin) sign — all tested.
 
 ## 4. Rural & offline (M4+)
 - R4.1 ⬜ Flutter Android app (Doctor + Staff apps) sharing this backend:
@@ -91,5 +94,6 @@ Final Product Layout & Competitor Study 2026) plus the Master Prompt.
   identifiers (automated, incl. raw SQL RLS proofs)
 - ✅ Authenticated user sees only their authorized context; RBAC denials tested
 - ✅ Audit trail records sensitive actions; append-only enforced by the database
-- ⬜ Queue/consultation/Rx/billing acceptance tests → M2–M3
+- ✅ Queue/consultation/Rx/billing acceptance tests (M2–M3, incl. the full
+  E2E chain register→queue→consult→sign→invoice→pay→receipt)
 - ⬜ Backup restorable in staging → M7 (procedure drafted in DEPLOYMENT.md)

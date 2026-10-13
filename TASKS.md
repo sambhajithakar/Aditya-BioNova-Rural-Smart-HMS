@@ -36,12 +36,31 @@ implementation sessions continue milestone by milestone.)
 - [ ] ⏳ Password reset e-mail (needs e-mail provider decision — see M7)
 - [ ] ⏳ Translation QA review by a native speaker (plan in DEPLOYMENT.md)
 
-## M3 — Consultation → Prescription → Billing → Receipt
-- [ ] encounters, vitals, structured diagnosis; signed Rx with immutable
-      amendments (+ audit); allergy/duplicate-drug warnings (validated data)
-- [ ] invoices/receipts/refunds with append-only financial ledger;
-      idempotency keys on payment creation; sandbox payment gateway spike
-- [ ] printable A4/A5 trilingual Rx/PDF; full E2E acceptance chain tested
+## M3 — Consultation → Prescription → Billing → Receipt ✅ (2026-10-13)
+- [x] encounters (+ one-open-per-patient guard), range-checked vitals,
+      structured diagnosis; completed encounters frozen by DB trigger
+- [x] signed Rx with versioned amendments — immutability enforced by DB
+      trigger (only legal post-sign change: signed → superseded), audited;
+      allergy check blocks signing unless explicitly acknowledged;
+      duplicate-drug warnings advisory; items must reference the validated
+      `drug_catalog` (45 seeded drugs, no free-text medication entry)
+- [x] invoices (server-computed totals, per-tenant INV-000001 numbering,
+      freeze-on-issue), receipts, refunds with bounds, append-only ledger
+      (trigger + revoked grants + unique partial indexes vs double-posting);
+      `Idempotency-Key` on payment creation; sandbox payment gateway spike
+      (pending → confirm/fail callbacks)
+- [x] printable A4 trilingual Rx + receipt (`/print/rx/[id]`, browser
+      print/PDF pipeline); full E2E acceptance chain tested
+- [x] Web pages: /consultation (vitals, diagnosis, safety-gated signing),
+      /billing (invoice → issue → payment → receipt), print view —
+      EN/मराठी/हिंदी strings
+- [x] Tests: 72/72 — cross-tenant 404s for every new table, raw RLS
+      proofs, signed-Rx/ledger/invoice-freeze raw-SQL immutability proofs,
+      RBAC matrix (support/auditor see no clinical or financial data),
+      idempotency replay, refund bounds, E2E chain audit assertions
+- [ ] ⏳ Playwright E2E (needs a headless browser in CI — still pending)
+- [ ] ⏳ Real payment gateway in sandbox (Razorpay/Cashfree/PhonePe
+      shortlist) — M7 gate; M3 ships the local sandbox simulation only
 
 ## M4 — Android app + offline core (Flutter)
 - [ ] app shells (Doctor/Staff), secure login, encrypted SQLite + outbox

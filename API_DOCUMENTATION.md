@@ -3,7 +3,7 @@
 Interactive OpenAPI docs (dev): **http://127.0.0.1:8000/api/v1/docs**
 Machine spec: `packages/contracts/openapi.json` (regenerate with
 `scripts/generate-contracts.sh`; CI fails if stale). Full URL list below is
-generated from the same source — 20 paths at M2.
+generated from the same source — 42 paths at M3.
 
 ## Conventions
 
@@ -75,6 +75,50 @@ Illegal queue transitions (e.g. completed→called, waiting→in_consultation)
 | pharmacist / lab | patient.read only | — | — | — |
 | auditor / support | **none** | — | — | — |
 
+
+## Consultation, prescription & billing (M3)
+
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| POST | /api/v1/encounters | encounter.write | 201 opens a consultation. One OPEN encounter per patient → 409. Linked queue entry must be `called`/`in_consultation` (else 409) and advances to `in_consultation` |
+| GET | /api/v1/encounters | encounter.read | `?patient_id=&enc_status=&limit=&offset=` |
+| GET | /api/v1/encounters/{id} | encounter.read | Detail with vitals[], diagnoses[], prescription_ids[]. Cross-tenant → 404 |
+| PATCH | /api/v1/encounters/{id} | encounter.write | Edit while open; completed → **409** (DB trigger) |
+| POST | /api/v1/encounters/{id}/vitals | encounter.write | Range-checked (schema + CHECK constraints); systolic ≤ diastolic → 422; completed encounter → 409 |
+| POST | /api/v1/encounters/{id}/diagnoses | encounter.write | 201 structured diagnosis (code/label/kind/status) |
+| POST | /api/v1/encounters/{id}/complete | encounter.write | Closes the encounter and completes its linked queue entry (audited) |
+| GET | /api/v1/prescriptions/drugs?q= | prescription.read | Validated `drug_catalog` search (global reference data) |
+| POST | /api/v1/prescriptions | prescription.sign | 201 draft. Items must reference the catalog → 422 `Unknown or inactive drug(s)` (no free-text meds) |
+| POST | /api/v1/prescriptions/{id}/warnings | prescription.sign | Pre-flight safety check → `{warnings[], blocking}` — allergy hits block, duplicate-drug warns |
+| GET | /api/v1/prescriptions | prescription.read | `?patient_id=&rx_status=` |
+| GET | /api/v1/prescriptions/{id} | prescription.read | Detail with items[] |
+| POST | /api/v1/prescriptions/{id}/sign | prescription.sign | draft→signed. Allergy conflict → **409** + warnings unless `acknowledge_allergies=true` (ack persisted + audited). Already signed → 409 |
+| POST | /api/v1/prescriptions/{id}/amend | prescription.sign | 201 new version N+1 (`supersedes_id`), immediately signed; old row → `superseded`. Amending a superseded row → 409; draft → 409 (edit it directly) |
+| POST | /api/v1/billing/invoices | billing.invoice | 201 draft. **Totals computed server-side** from items; `discount > subtotal` → 422; per-tenant number `INV-000001` (advisory lock) |
+| POST | /api/v1/billing/invoices/{id}/issue | billing.invoice | draft→issued; posts the `charge` ledger debit; re-issue → 409; zero-total → 422 |
+| POST | /api/v1/billing/invoices/{id}/void | billing.invoice | Only unpaid draft/issued; paid → 409 (refund first). Issued→void posts reversing `adjustment` credit |
+| GET | /api/v1/billing/invoices | billing.read | `?patient_id=&inv_status=` |
+| GET | /api/v1/billing/invoices/{id} | billing.read | Detail with items[] + payments[] |
+| POST | /api/v1/billing/invoices/{id}/payments | billing.payment | 201. Supports `Idempotency-Key` (replay → same payment; different payload → 409). Amount > balance → 422; draft invoice → 409. `gateway=manual` settles immediately; `gateway=sandbox` stays `pending` |
+| POST | /api/v1/billing/payments/{id}/confirm | billing.payment | Sandbox gateway callback: pending→succeeded, credits the ledger once (double-confirm → 409) |
+| POST | /api/v1/billing/payments/{id}/fail | billing.payment | Sandbox decline: pending→failed, no ledger credit, balance unchanged |
+| POST | /api/v1/billing/payments/{id}/refund | billing.refund | 201 refund ≤ (paid − already refunded), else 422; posts a `refund` debit; full refund → payment `refunded`, invoice back to `issued` |
+| GET | /api/v1/billing/invoices/{id}/ledger | billing.read | Append-only ledger rows for the invoice |
+| GET | /api/v1/billing/invoices/{id}/receipt | billing.read | Printable receipt (invoice + items + payments + refunds + ledger + balance). Draft → 409 |
+| GET | /api/v1/billing/ledger | billing.read | Tenant ledger, newest first |
+
+### M3 RBAC matrix (migration 0006)
+
+| Role | encounter.write | prescription.sign | billing.invoice/payment | billing.refund |
+|---|---|---|---|---|
+| owner / admin | ✅ | ✅ | ✅ | ✅ |
+| doctor | ✅ | ✅ | — (billing.read only) | — |
+| nurse | ✅ | — | — | — |
+| receptionist | — | — | ✅ | — |
+| billing | — | — | ✅ | ✅ |
+| pharmacist | — | — | — | — (prescription.read only) |
+| auditor / support | **none** | **none** | **none** | **none** |
+
 ## Example session
 
 ```bash
@@ -109,7 +153,7 @@ curl -s -X POST $BASE/auth/refresh -H 'Content-Type: application/json' \
 ## Rate limiting, idempotency, versions
 
 - Rate limiting: ingress-level (deployment concern, M7) — not yet applied.
-- Idempotency keys: implemented for POST /patients and POST /opd/queue;
-  payment/order creation (M3) reuses the same mechanism.
+- Idempotency keys: implemented for POST /patients, POST /opd/queue and
+  POST /billing/invoices/{id}/payments.
 - Versioning: URL versioning `/api/v1`; breaking changes bump the segment;
   contract snapshot diff reviewed in CI.

@@ -20,6 +20,7 @@ from sqlalchemy import (
     DateTime,
     Integer,
     ForeignKey,
+    Numeric,
     Index,
     PrimaryKeyConstraint,
     String,
@@ -471,4 +472,590 @@ class IdempotencyKey(Base):
     __table_args__ = (
         UniqueConstraint("organization_id", "idempotency_key", name="uq_idem_org_key"),
         Index("ix_idem_org_created", "organization_id", "created_at"),
+    )
+
+
+# --- M3: encounters, prescriptions, billing ---------------------------------
+# Tenant rules identical to M1/M2: organization_id + strict RLS (0006).
+# Financial and clinical immutability is enforced by DB triggers: signed
+# prescriptions and completed encounters cannot change, invoice financials
+# freeze after issue, and ledger_entries is append-only.
+
+
+class Encounter(Base):
+    """One OPD consultation (doctor workspace)."""
+
+    __tablename__ = "encounters"
+
+    id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    organization_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    branch_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("branches.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    patient_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("patients.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    appointment_id: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("appointments.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    queue_entry_id: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("opd_queue.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    provider_user_id: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    chief_complaint: Mapped[str] = mapped_column(
+        String(500), nullable=False, default="", server_default=""
+    )
+    history: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    examination: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    assessment: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    plan: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="open", server_default="open"
+    )
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+    ended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_by: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("status IN ('open','completed')", name="ck_enc_status"),
+        Index("ix_enc_org_patient", "organization_id", "patient_id"),
+        Index("ix_enc_org_status", "organization_id", "status"),
+    )
+
+
+class EncounterVitals(Base):
+    __tablename__ = "encounter_vitals"
+
+    id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    organization_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    encounter_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("encounters.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    bp_systolic: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bp_diastolic: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pulse: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    temperature_c: Mapped[float | None] = mapped_column(
+        Numeric(4, 1), nullable=True
+    )
+    spo2: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    respiratory_rate: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    weight_kg: Mapped[float | None] = mapped_column(
+        Numeric(5, 2), nullable=True
+    )
+    height_cm: Mapped[float | None] = mapped_column(
+        Numeric(5, 1), nullable=True
+    )
+    notes: Mapped[str] = mapped_column(
+        String(500), nullable=False, default="", server_default=""
+    )
+    recorded_by: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "bp_systolic IS NULL OR bp_systolic BETWEEN 40 AND 300",
+            name="ck_vitals_sys",
+        ),
+        CheckConstraint(
+            "bp_diastolic IS NULL OR bp_diastolic BETWEEN 20 AND 200",
+            name="ck_vitals_dia",
+        ),
+        CheckConstraint(
+            "pulse IS NULL OR pulse BETWEEN 20 AND 250", name="ck_vitals_pulse"
+        ),
+        CheckConstraint(
+            "spo2 IS NULL OR spo2 BETWEEN 40 AND 100", name="ck_vitals_spo2"
+        ),
+        CheckConstraint(
+            "bp_systolic IS NULL OR bp_diastolic IS NULL "
+            "OR bp_systolic > bp_diastolic",
+            name="ck_vitals_bp_pair",
+        ),
+        Index("ix_vitals_org_enc", "organization_id", "encounter_id"),
+    )
+
+
+class EncounterDiagnosis(Base):
+    __tablename__ = "encounter_diagnoses"
+
+    id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    organization_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    encounter_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("encounters.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    code: Mapped[str] = mapped_column(String(20), nullable=False)
+    label: Mapped[str] = mapped_column(String(300), nullable=False)
+    kind: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="primary", server_default="primary"
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="confirmed",
+        server_default="confirmed",
+    )
+    recorded_by: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("kind IN ('primary','secondary')", name="ck_dx_kind"),
+        CheckConstraint(
+            "status IN ('suspected','confirmed','ruled_out')",
+            name="ck_dx_status",
+        ),
+        Index("ix_dx_org_enc", "organization_id", "encounter_id"),
+    )
+
+
+class DrugCatalog(Base):
+    """Global validated drug reference (read-only for the app role)."""
+
+    __tablename__ = "drug_catalog"
+
+    id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    generic_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    brand_hint: Mapped[str] = mapped_column(
+        String(200), nullable=False, default="", server_default=""
+    )
+    drug_class: Mapped[str] = mapped_column(
+        String(100), nullable=False, default="", server_default=""
+    )
+    allergy_terms: Mapped[str] = mapped_column(
+        String(300), nullable=False, default="", server_default=""
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
+
+
+class Prescription(Base):
+    """Versioned, signed-then-immutable prescription.
+
+    Status flow: draft -> signed -> superseded (by a newer amendment).
+    The DB trigger allows only signed -> superseded with all other columns
+    identical; DELETE is blocked for non-draft rows.
+    """
+
+    __tablename__ = "prescriptions"
+
+    id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    organization_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    encounter_id: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("encounters.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    patient_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("patients.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    created_by: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    prescriber_user_id: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="draft", server_default="draft"
+    )
+    version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
+    supersedes_id: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("prescriptions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    diagnosis_text: Mapped[str] = mapped_column(
+        String(500), nullable=False, default="", server_default=""
+    )
+    advice: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    follow_up: Mapped[str] = mapped_column(
+        String(300), nullable=False, default="", server_default=""
+    )
+    allergy_acknowledged: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    signed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    amendment_reason: Mapped[str] = mapped_column(
+        String(500), nullable=False, default="", server_default=""
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('draft','signed','superseded')", name="ck_rx_status"
+        ),
+        CheckConstraint("version >= 1", name="ck_rx_version"),
+        Index("ix_rx_org_patient", "organization_id", "patient_id"),
+        Index("ix_rx_org_status", "organization_id", "status"),
+    )
+
+
+class PrescriptionItem(Base):
+    __tablename__ = "prescription_items"
+
+    id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    organization_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    prescription_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("prescriptions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    drug_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("drug_catalog.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    dose: Mapped[str] = mapped_column(String(100), nullable=False)
+    route: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="oral", server_default="oral"
+    )
+    frequency: Mapped[str] = mapped_column(String(100), nullable=False)
+    duration_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    quantity: Mapped[str] = mapped_column(
+        String(100), nullable=False, default="", server_default=""
+    )
+    instructions: Mapped[str] = mapped_column(
+        String(500), nullable=False, default="", server_default=""
+    )
+    seq: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "duration_days BETWEEN 1 AND 365", name="ck_rxitem_duration"
+        ),
+        CheckConstraint("seq >= 0", name="ck_rxitem_seq"),
+        Index("ix_rxitem_org_rx", "organization_id", "prescription_id"),
+    )
+
+
+class Invoice(Base):
+    """Billing document. Financials freeze once status leaves 'draft'."""
+
+    __tablename__ = "invoices"
+
+    id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    organization_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    branch_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("branches.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    patient_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("patients.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    encounter_id: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("encounters.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    invoice_number: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="draft", server_default="draft"
+    )
+    subtotal: Mapped[float] = mapped_column(
+        Numeric(12, 2), nullable=False, default=0, server_default="0"
+    )
+    discount: Mapped[float] = mapped_column(
+        Numeric(12, 2), nullable=False, default=0, server_default="0"
+    )
+    tax_total: Mapped[float] = mapped_column(
+        Numeric(12, 2), nullable=False, default=0, server_default="0"
+    )
+    total: Mapped[float] = mapped_column(
+        Numeric(12, 2), nullable=False, default=0, server_default="0"
+    )
+    amount_paid: Mapped[float] = mapped_column(
+        Numeric(12, 2), nullable=False, default=0, server_default="0"
+    )
+    notes: Mapped[str] = mapped_column(
+        String(500), nullable=False, default="", server_default=""
+    )
+    issued_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_by: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "invoice_number",
+                         name="uq_invoice_org_number"),
+        CheckConstraint("status IN ('draft','issued','paid','void')",
+                        name="ck_inv_status"),
+        CheckConstraint("subtotal >= 0 AND discount >= 0 AND tax_total >= 0 "
+                        "AND total >= 0 AND amount_paid >= 0",
+                        name="ck_inv_amounts_nonneg"),
+        CheckConstraint("discount <= subtotal", name="ck_inv_discount_bound"),
+        Index("ix_inv_org_patient", "organization_id", "patient_id"),
+        Index("ix_inv_org_status", "organization_id", "status"),
+    )
+
+
+class InvoiceItem(Base):
+    __tablename__ = "invoice_items"
+
+    id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    organization_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    invoice_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("invoices.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    item_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    description: Mapped[str] = mapped_column(String(300), nullable=False)
+    quantity: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
+    unit_price: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    tax_rate: Mapped[float] = mapped_column(
+        Numeric(5, 2), nullable=False, default=0, server_default="0"
+    )
+    line_total: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    seq: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "item_type IN ('consultation','procedure','pharmacy','lab','other')",
+            name="ck_invitem_type",
+        ),
+        CheckConstraint(
+            "quantity > 0 AND unit_price >= 0 AND tax_rate >= 0 "
+            "AND line_total >= 0",
+            name="ck_invitem_amounts",
+        ),
+        Index("ix_invitem_org_inv", "organization_id", "invoice_id"),
+    )
+
+
+class Payment(Base):
+    __tablename__ = "payments"
+
+    id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    organization_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    invoice_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("invoices.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    amount: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    method: Mapped[str] = mapped_column(String(20), nullable=False)
+    gateway: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="manual", server_default="manual"
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="pending", server_default="pending"
+    )
+    gateway_ref: Mapped[str] = mapped_column(
+        String(120), nullable=False, default="", server_default=""
+    )
+    failure_reason: Mapped[str] = mapped_column(
+        String(300), nullable=False, default="", server_default=""
+    )
+    created_by: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_pay_amount_positive"),
+        CheckConstraint(
+            "method IN ('cash','upi','card','insurance','other')",
+            name="ck_pay_method",
+        ),
+        CheckConstraint("gateway IN ('manual','sandbox')", name="ck_pay_gateway"),
+        CheckConstraint(
+            "status IN ('pending','succeeded','failed','refunded',"
+            "'partially_refunded')",
+            name="ck_pay_status",
+        ),
+        Index("ix_pay_org_invoice", "organization_id", "invoice_id"),
+    )
+
+
+class Refund(Base):
+    __tablename__ = "refunds"
+
+    id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    organization_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    payment_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("payments.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    amount: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    reason: Mapped[str] = mapped_column(String(300), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="succeeded", server_default="succeeded"
+    )
+    gateway_ref: Mapped[str] = mapped_column(
+        String(120), nullable=False, default="", server_default=""
+    )
+    created_by: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_ref_amount_positive"),
+        CheckConstraint("status IN ('succeeded','failed')", name="ck_ref_status"),
+        Index("ix_ref_org_payment", "organization_id", "payment_id"),
+    )
+
+
+class LedgerEntry(Base):
+    """Append-only financial ledger (UPDATE/DELETE blocked by trigger)."""
+
+    __tablename__ = "ledger_entries"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    organization_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    invoice_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("invoices.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    payment_id: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("payments.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    refund_id: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("refunds.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    entry_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    direction: Mapped[str] = mapped_column(String(10), nullable=False)
+    amount: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    description: Mapped[str] = mapped_column(String(300), nullable=False)
+    created_by: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "entry_type IN ('charge','payment','refund','adjustment')",
+            name="ck_ledger_type",
+        ),
+        CheckConstraint("direction IN ('debit','credit')",
+                        name="ck_ledger_direction"),
+        CheckConstraint("amount > 0", name="ck_ledger_amount_positive"),
+        Index("ix_ledger_org_invoice", "organization_id", "invoice_id", "id"),
+        PrimaryKeyConstraint("id"),
     )

@@ -14,11 +14,14 @@ from .routers import (
     audit,
     appointments,
     auth,
+    billing,
     branches,
+    encounters,
     health,
     members,
     opd_queue,
     patients,
+    prescriptions,
 )
 
 logger = logging.getLogger("hms.api")
@@ -78,6 +81,9 @@ def create_app() -> FastAPI:
     app.include_router(patients.router, prefix=BASE_PREFIX)
     app.include_router(appointments.router, prefix=BASE_PREFIX)
     app.include_router(opd_queue.router, prefix=BASE_PREFIX)
+    app.include_router(encounters.router, prefix=BASE_PREFIX)
+    app.include_router(prescriptions.router, prefix=BASE_PREFIX)
+    app.include_router(billing.router, prefix=BASE_PREFIX)
     return app
 
 

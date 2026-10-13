@@ -398,3 +398,373 @@ class PageOut(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+# --- M3: encounters ---------------------------------------------------------
+_DX_KINDS = ("primary", "secondary")
+_DX_STATUSES = ("suspected", "confirmed", "ruled_out")
+_ITEM_TYPES = ("consultation", "procedure", "pharmacy", "lab", "other")
+_PAY_METHODS = ("cash", "upi", "card", "insurance", "other")
+_ROUTES = ("oral", "topical", "inhalation", "injectable", "sublingual",
+           "rectal", "ophthalmic", "otic", "nasal", "other")
+
+
+class EncounterIn(StrictModel):
+    patient_id: uuid.UUID
+    branch_id: uuid.UUID
+    appointment_id: uuid.UUID | None = None
+    queue_entry_id: uuid.UUID | None = None
+    provider_user_id: uuid.UUID | None = None
+    chief_complaint: str = Field(default="", max_length=500)
+    history: str = Field(default="", max_length=5000)
+    examination: str = Field(default="", max_length=5000)
+
+
+class EncounterUpdateIn(StrictModel):
+    chief_complaint: str | None = Field(default=None, max_length=500)
+    history: str | None = Field(default=None, max_length=5000)
+    examination: str | None = Field(default=None, max_length=5000)
+    assessment: str | None = Field(default=None, max_length=5000)
+    plan: str | None = Field(default=None, max_length=5000)
+    provider_user_id: uuid.UUID | None = None
+
+
+class VitalsIn(StrictModel):
+    bp_systolic: int | None = Field(default=None, ge=40, le=300)
+    bp_diastolic: int | None = Field(default=None, ge=20, le=200)
+    pulse: int | None = Field(default=None, ge=20, le=250)
+    temperature_c: float | None = Field(default=None, ge=30, le=45)
+    spo2: int | None = Field(default=None, ge=40, le=100)
+    respiratory_rate: int | None = Field(default=None, ge=5, le=80)
+    weight_kg: float | None = Field(default=None, ge=0.5, le=400)
+    height_cm: float | None = Field(default=None, ge=30, le=260)
+    notes: str = Field(default="", max_length=500)
+
+    @field_validator("temperature_c", "weight_kg", "height_cm")
+    @classmethod
+    def _round(cls, v: float | None) -> float | None:
+        return None if v is None else round(v, 1)
+
+
+class VitalsOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    encounter_id: uuid.UUID
+    bp_systolic: int | None
+    bp_diastolic: int | None
+    pulse: int | None
+    temperature_c: float | None
+    spo2: int | None
+    respiratory_rate: int | None
+    weight_kg: float | None
+    height_cm: float | None
+    notes: str
+    recorded_at: datetime
+
+
+class DiagnosisIn(StrictModel):
+    code: str = Field(min_length=1, max_length=20)
+    label: str = Field(min_length=2, max_length=300)
+    kind: str = "primary"
+    status: str = "confirmed"
+
+    @field_validator("kind")
+    @classmethod
+    def _kind(cls, v: str) -> str:
+        if v not in _DX_KINDS:
+            raise ValueError(f"kind must be one of {_DX_KINDS}")
+        return v
+
+    @field_validator("status")
+    @classmethod
+    def _status(cls, v: str) -> str:
+        if v not in _DX_STATUSES:
+            raise ValueError(f"status must be one of {_DX_STATUSES}")
+        return v
+
+
+class DiagnosisOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    encounter_id: uuid.UUID
+    code: str
+    label: str
+    kind: str
+    status: str
+    created_at: datetime
+
+
+class EncounterOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    organization_id: uuid.UUID
+    branch_id: uuid.UUID
+    patient_id: uuid.UUID
+    appointment_id: uuid.UUID | None
+    queue_entry_id: uuid.UUID | None
+    provider_user_id: uuid.UUID | None
+    chief_complaint: str
+    history: str
+    examination: str
+    assessment: str
+    plan: str
+    status: str
+    started_at: datetime
+    ended_at: datetime | None
+    created_at: datetime
+
+
+class EncounterDetailOut(EncounterOut):
+    vitals: list[VitalsOut] = []
+    diagnoses: list[DiagnosisOut] = []
+    prescription_ids: list[uuid.UUID] = []
+
+
+# --- M3: prescriptions ------------------------------------------------------
+class DrugOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    generic_name: str
+    brand_hint: str
+    drug_class: str
+
+
+class RxItemIn(StrictModel):
+    drug_id: uuid.UUID
+    dose: str = Field(min_length=1, max_length=100)
+    route: str = "oral"
+    frequency: str = Field(min_length=1, max_length=100)
+    duration_days: int = Field(ge=1, le=365)
+    quantity: str = Field(default="", max_length=100)
+    instructions: str = Field(default="", max_length=500)
+
+    @field_validator("route")
+    @classmethod
+    def _route(cls, v: str) -> str:
+        v = v.lower()
+        if v not in _ROUTES:
+            raise ValueError(f"route must be one of {_ROUTES}")
+        return v
+
+
+class RxItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    prescription_id: uuid.UUID
+    drug_id: uuid.UUID
+    dose: str
+    route: str
+    frequency: str
+    duration_days: int
+    quantity: str
+    instructions: str
+    seq: int
+
+
+class PrescriptionIn(StrictModel):
+    """Create a draft Rx (optionally from an encounter)."""
+
+    patient_id: uuid.UUID
+    encounter_id: uuid.UUID | None = None
+    diagnosis_text: str = Field(default="", max_length=500)
+    advice: str = Field(default="", max_length=5000)
+    follow_up: str = Field(default="", max_length=300)
+    items: list[RxItemIn] = Field(min_length=1, max_length=50)
+
+
+class PrescriptionOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    organization_id: uuid.UUID
+    encounter_id: uuid.UUID | None
+    patient_id: uuid.UUID
+    prescriber_user_id: uuid.UUID | None
+    status: str
+    version: int
+    supersedes_id: uuid.UUID | None
+    diagnosis_text: str
+    advice: str
+    follow_up: str
+    allergy_acknowledged: bool
+    signed_at: datetime | None
+    amendment_reason: str
+    created_at: datetime
+
+
+class PrescriptionDetailOut(PrescriptionOut):
+    items: list[RxItemOut] = []
+
+
+class SignRxIn(StrictModel):
+    acknowledge_allergies: bool = False
+
+
+class AmendRxIn(StrictModel):
+    reason: str = Field(min_length=3, max_length=500)
+    diagnosis_text: str = Field(default="", max_length=500)
+    advice: str = Field(default="", max_length=5000)
+    follow_up: str = Field(default="", max_length=300)
+    items: list[RxItemIn] = Field(min_length=1, max_length=50)
+    acknowledge_allergies: bool = False
+
+
+class RxWarning(BaseModel):
+    kind: str  # allergy | duplicate_drug
+    message: str
+    drug_ids: list[uuid.UUID] = []
+
+
+class RxWarningsOut(BaseModel):
+    """Pre-sign safety check (allergy + duplicate-drug)."""
+
+    warnings: list[RxWarning] = []
+    blocking: bool = False
+
+
+# --- M3: billing ------------------------------------------------------------
+class InvoiceItemIn(StrictModel):
+    item_type: str
+    description: str = Field(min_length=1, max_length=300)
+    quantity: int = Field(default=1, ge=1, le=10000)
+    unit_price: float = Field(ge=0, le=10_000_000)
+    tax_rate: float = Field(default=0, ge=0, le=100)
+
+    @field_validator("item_type")
+    @classmethod
+    def _type(cls, v: str) -> str:
+        if v not in _ITEM_TYPES:
+            raise ValueError(f"item_type must be one of {_ITEM_TYPES}")
+        return v
+
+
+class InvoiceItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    invoice_id: uuid.UUID
+    item_type: str
+    description: str
+    quantity: int
+    unit_price: float
+    tax_rate: float
+    line_total: float
+    seq: int
+
+
+class InvoiceIn(StrictModel):
+    patient_id: uuid.UUID
+    branch_id: uuid.UUID
+    encounter_id: uuid.UUID | None = None
+    discount: float = Field(default=0, ge=0)
+    notes: str = Field(default="", max_length=500)
+    items: list[InvoiceItemIn] = Field(min_length=1, max_length=200)
+
+
+class InvoiceOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    organization_id: uuid.UUID
+    branch_id: uuid.UUID
+    patient_id: uuid.UUID
+    encounter_id: uuid.UUID | None
+    invoice_number: str
+    status: str
+    subtotal: float
+    discount: float
+    tax_total: float
+    total: float
+    amount_paid: float
+    notes: str
+    issued_at: datetime | None
+    created_at: datetime
+
+
+class InvoiceDetailOut(InvoiceOut):
+    items: list[InvoiceItemOut] = []
+    payments: list["PaymentOut"] = []
+
+
+class PaymentIn(StrictModel):
+    amount: float = Field(gt=0, le=10_000_000)
+    method: str = "cash"
+    gateway: str = "manual"
+
+    @field_validator("method")
+    @classmethod
+    def _method(cls, v: str) -> str:
+        if v not in _PAY_METHODS:
+            raise ValueError(f"method must be one of {_PAY_METHODS}")
+        return v
+
+    @field_validator("gateway")
+    @classmethod
+    def _gateway(cls, v: str) -> str:
+        if v not in ("manual", "sandbox"):
+            raise ValueError("gateway must be 'manual' or 'sandbox'")
+        return v
+
+
+class PaymentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    invoice_id: uuid.UUID
+    amount: float
+    method: str
+    gateway: str
+    status: str
+    gateway_ref: str
+    failure_reason: str
+    created_at: datetime
+
+
+class RefundIn(StrictModel):
+    amount: float = Field(gt=0, le=10_000_000)
+    reason: str = Field(min_length=3, max_length=300)
+
+
+class RefundOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    payment_id: uuid.UUID
+    amount: float
+    reason: str
+    status: str
+    created_at: datetime
+
+
+class LedgerEntryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    invoice_id: uuid.UUID
+    payment_id: uuid.UUID | None
+    refund_id: uuid.UUID | None
+    entry_type: str
+    direction: str
+    amount: float
+    description: str
+    created_at: datetime
+
+
+class ReceiptOut(BaseModel):
+    """Printable receipt: invoice + items + payments + ledger position."""
+
+    invoice: InvoiceOut
+    items: list[InvoiceItemOut] = []
+    payments: list[PaymentOut] = []
+    refunds: list[RefundOut] = []
+    ledger: list[LedgerEntryOut] = []
+    balance_due: float
+    org_name: str
+    branch_name: str
+    patient_name: str
+    patient_uhid: str
