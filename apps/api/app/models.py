@@ -10,13 +10,15 @@ Design rules (see ARCHITECTURE.md):
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
+    Integer,
     ForeignKey,
     Index,
     PrimaryKeyConstraint,
@@ -258,4 +260,215 @@ class AuditEvent(Base):
         Index("ix_audit_org_created", "organization_id", "created_at"),
         Index("ix_audit_action", "action"),
         PrimaryKeyConstraint("id"),
+    )
+
+
+# --- M2: patients, appointments, OPD queue --------------------------------
+# Tenant rules identical to M1: organization_id + strict RLS policies
+# (migration 0005). UHID is unique per organization, never globally.
+
+
+class Patient(Base):
+    __tablename__ = "patients"
+
+    id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    organization_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    uhid: Mapped[str] = mapped_column(String(20), nullable=False)
+    full_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    gender: Mapped[str] = mapped_column(String(20), nullable=False)
+    date_of_birth: Mapped[date | None] = mapped_column(Date, nullable=True)
+    dob_estimated: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    address: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    blood_group: Mapped[str | None] = mapped_column(String(5), nullable=True)
+    allergies: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="active", server_default="active"
+    )
+    merged_into_id: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("patients.id", ondelete="SET NULL"), nullable=True
+    )
+    created_by: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "uhid", name="uq_patient_org_uhid"),
+        Index("ix_patients_org_created", "organization_id", "created_at"),
+        Index("ix_patients_org_phone", "organization_id", "phone"),
+        CheckConstraint(
+            "gender IN ('male','female','other','unknown')", name="ck_patient_gender"
+        ),
+        CheckConstraint(
+            "status IN ('active','inactive','merged')", name="ck_patient_status"
+        ),
+    )
+
+
+class Appointment(Base):
+    __tablename__ = "appointments"
+
+    id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    organization_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    branch_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("branches.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    patient_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("patients.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    provider_user_id: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    starts_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    reason: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="scheduled", server_default="scheduled"
+    )
+    notes: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_by: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("ends_at > starts_at", name="ck_appt_end_after_start"),
+        CheckConstraint(
+            "status IN ('scheduled','checked_in','completed','cancelled','no_show')",
+            name="ck_appt_status",
+        ),
+        Index("ix_appt_org_starts", "organization_id", "starts_at"),
+        Index("ix_appt_org_patient", "organization_id", "patient_id"),
+    )
+
+
+class OpdQueueEntry(Base):
+    __tablename__ = "opd_queue"
+
+    id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    organization_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    branch_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("branches.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    patient_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("patients.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    appointment_id: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("appointments.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    service_date: Mapped[date] = mapped_column(Date, nullable=False)
+    token_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="waiting", server_default="waiting"
+    )
+    priority: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="normal", server_default="normal"
+    )
+    doctor_user_id: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    called_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_by: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "organization_id", "service_date", "token_number",
+            name="uq_queue_org_date_token",
+        ),
+        CheckConstraint(
+            "status IN ('waiting','called','in_consultation','completed','skipped','cancelled')",
+            name="ck_queue_status",
+        ),
+        CheckConstraint("priority IN ('normal','urgent')", name="ck_queue_priority"),
+        Index("ix_queue_org_date", "organization_id", "service_date"),
+        Index("ix_queue_org_status", "organization_id", "status"),
+    )
+
+
+class IdempotencyKey(Base):
+    """Stored responses for retried POSTs (registration desks and the M4
+    offline sync client re-send requests; a retry must not duplicate
+    patients, appointments or queue entries)."""
+
+    __tablename__ = "idempotency_keys"
+
+    id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    organization_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    endpoint: Mapped[str] = mapped_column(String(120), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    response_status: Mapped[int] = mapped_column(Integer, nullable=False)
+    response_body: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "idempotency_key", name="uq_idem_org_key"),
+        Index("ix_idem_org_created", "organization_id", "created_at"),
     )

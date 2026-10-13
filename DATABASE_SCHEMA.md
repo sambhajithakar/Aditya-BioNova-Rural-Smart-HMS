@@ -1,10 +1,12 @@
-# Database Schema — PostgreSQL 16 (M1)
+# Database Schema — PostgreSQL 16 (M2)
 
 Migrations: `apps/api/alembic/versions/`
 - `0001_initial_schema` — tables, app role, grants, RLS policies, audit trigger
 - `0002_seed_rbac` — permission catalogue + 10 system roles
 - `0003_audit_insert_function` — `insert_audit_event()` SECURITY DEFINER helper
 - `0004_fix_auditor_role` — auditor corrected to true read-only
+- `0005_patients_appointments_queue` — patients/appointments/opd_queue +
+  idempotency_keys, clinical RBAC seed (7 permissions)
 
 Run: `cd apps/api && alembic upgrade head` (uses `MIGRATION_DATABASE_URL`,
 the **table-owner** role). Runtime queries use `DATABASE_URL` (`hms_app`,
@@ -33,10 +35,17 @@ is_superadmin · timestamps.
 
 ### roles / permissions / role_permissions (reference, read-only for app)
 `permissions.key` PK: org.read, org.manage, org.transfer_ownership (reserved),
-branch.read, branch.manage, member.read, member.manage, audit.read.
+branch.read, branch.manage, member.read, member.manage, audit.read, plus the
+M2 clinical set: patient.read, patient.write, patient.merge,
+appointment.read, appointment.write, queue.read, queue.manage.
 `roles.key`: owner, admin, doctor, nurse, receptionist, pharmacist,
-lab_technician, billing, auditor, support. 41 seeded mappings; **auditor is
-read-only** (corrected in 0004).
+lab_technician, billing, auditor, support. **auditor is read-only**
+(corrected in 0004). M2 clinical grants: owner/admin all 7;
+receptionist patient+appointment+queue (write/manage); doctor
+patient.read + appointment.read + queue.read/manage; nurse
+patient.read + appointment.read + queue.read; billing
+patient.read + appointment.read; pharmacist/lab patient.read.
+**support and auditor have NO patient-data permissions** (tested).
 
 ### memberships (RLS)
 id uuid PK · user_id FK CASCADE · organization_id FK CASCADE · branch_id FK
@@ -62,6 +71,53 @@ Immutability (three independent layers):
 3. `BEFORE UPDATE OR DELETE` trigger → `RAISE EXCEPTION 'append-only'`
    (fires even for the table owner — tested)
 
+
+### patients (RLS) — M2
+id uuid PK · organization_id FK CASCADE · **uhid varchar(20)** · full_name ·
+gender (male/female/other/unknown) · date_of_birth date nullable +
+dob_estimated bool · phone varchar(20) normalized digits · address ·
+blood_group (8 values, nullable) · allergies text · status
+(active/inactive/merged) · merged_into_id FK→patients SET NULL ·
+created_by FK · timestamps.
+
+- **UNIQUE (organization_id, uhid)** — UHID is tenant-scoped, never global.
+- UHID `P0000001` allocated under a per-org `pg_advisory_xact_lock`
+  (concurrent registrations cannot collide; constraint is the backstop).
+- Duplicate detection is **supervised**: registration matches on normalized
+  phone OR (lower(name), dob) inside the tenant; candidates are returned and
+  creation needs `allow_duplicates=true` (audited).
+- Merge is non-destructive: source keeps its UHID, gets
+  `merged_into_id = survivor`, status `merged`, becomes read-only.
+
+### appointments (RLS) — M2
+id uuid PK · organization_id FK · branch_id FK RESTRICT · patient_id FK
+RESTRICT · provider_user_id FK SET NULL nullable · starts_at/ends_at
+timestamptz (**ends_at > starts_at**) · reason · status
+(scheduled/checked_in/completed/cancelled/no_show) · notes · created_by ·
+timestamps. Indexes: (org, starts_at), (org, patient_id),
+(org, provider, starts_at). Provider double-booking in an overlapping
+window → 409 (service layer).
+
+### opd_queue (RLS) — M2
+id uuid PK · organization_id FK · branch_id FK RESTRICT · patient_id FK
+RESTRICT · appointment_id FK SET NULL nullable · service_date date ·
+token_number int · status (waiting/called/in_consultation/completed/
+skipped/cancelled) · priority (normal/urgent) · doctor_user_id FK SET NULL ·
+called_at/started_at/completed_at · created_by · timestamps.
+**UNIQUE (organization_id, service_date, token_number)**; tokens allocated
+under a per-(org, day) advisory lock. State machine enforced in the service
+layer: waiting→called→in_consultation→completed; waiting/called may be
+skipped or cancelled; skipped may be recalled (called); terminal states
+never move (409 on illegal transitions).
+
+### idempotency_keys (RLS) — M2
+id uuid PK · organization_id FK · idempotency_key varchar(100) · endpoint ·
+request_hash (SHA-256 of canonical payload) · response_status ·
+response_body jsonb · created_at. **UNIQUE (organization_id,
+idempotency_key)**. Retry with same payload replays the stored response;
+same key + different payload → 409. Used by POST /patients and
+POST /opd/queue (M4 offline sync depends on this).
+
 ## Row-level security policies
 
 GUC expressions (set per transaction by `set_request_context()`):
@@ -78,6 +134,10 @@ GUC expressions (set per transaction by `set_request_context()`):
 | memberships | INSERT/UPDATE/DELETE | … | `organization_id = GUC_ORG` |
 | audit_events | SELECT | audit_select | `organization_id = GUC_ORG` (NULL-org rows: operators only) |
 | audit_events | INSERT | audit_insert | `organization_id IS NULL OR = GUC_ORG` |
+| patients | ALL | patients_tenant | `organization_id = GUC_ORG` (USING + WITH CHECK) |
+| appointments | ALL | appointments_tenant | `organization_id = GUC_ORG` |
+| opd_queue | ALL | opd_queue_tenant | `organization_id = GUC_ORG` |
+| idempotency_keys | ALL | idempotency_keys_tenant | `organization_id = GUC_ORG` |
 
 Write-guard for audit rows is also enforced inside
 `insert_audit_event()` (SECURITY DEFINER), so a compromised app role still
@@ -99,8 +159,9 @@ cannot forge another tenant's audit history.
 Rule: measure query plans on real workload before adding more (no
 speculative over-indexing).
 
-## Known schema follow-ups (M2+)
-- patients/UHID, appointments, encounters, prescriptions (Blueprint §6),
-  with composite FKs enforcing tenant consistency.
+## Known schema follow-ups (M3+)
+- encounters, vitals, diagnosis, prescriptions, invoices (Blueprint §6).
 - `updated_at` triggers (currently app-managed).
 - FHIR/ABDM mapping tables when that phase starts.
+- Timezone: service_date is UTC date; facility-local day boundary lands
+  with scheduling polish (M3).

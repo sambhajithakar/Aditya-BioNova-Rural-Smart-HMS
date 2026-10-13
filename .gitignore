@@ -37,3 +37,6 @@ pgdata/
 # Test artifacts
 test-results/
 playwright-report/
+
+# build artifacts
+apps/web/tsconfig.tsbuildinfo

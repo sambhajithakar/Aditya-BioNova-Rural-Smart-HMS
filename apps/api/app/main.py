@@ -10,7 +10,16 @@ from fastapi.responses import JSONResponse
 
 from . import __version__
 from .config import get_settings
-from .routers import audit, auth, branches, health, members
+from .routers import (
+    audit,
+    appointments,
+    auth,
+    branches,
+    health,
+    members,
+    opd_queue,
+    patients,
+)
 
 logger = logging.getLogger("hms.api")
 
@@ -66,6 +75,9 @@ def create_app() -> FastAPI:
     app.include_router(branches.router, prefix=BASE_PREFIX)
     app.include_router(members.router, prefix=BASE_PREFIX)
     app.include_router(audit.router, prefix=BASE_PREFIX)
+    app.include_router(patients.router, prefix=BASE_PREFIX)
+    app.include_router(appointments.router, prefix=BASE_PREFIX)
+    app.include_router(opd_queue.router, prefix=BASE_PREFIX)
     return app
 
 

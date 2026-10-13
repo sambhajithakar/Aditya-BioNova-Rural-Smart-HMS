@@ -18,12 +18,23 @@ implementation sessions continue milestone by milestone.)
 - [ ] ⏳ Dev-server preview sign-off (browser check by owner)
 - [ ] ⏳ Push to customer's GitHub org + first GitHub Actions run
 
-## M2 — Registration → Appointments → OPD queue (next)
-- [ ] patients (+ supervised duplicate detection/merge), patient profile
-- [ ] appointments, tokens, OPD queue, doctor's authorized queue view
-- [ ] Web pages for reception/doctor workflows; Playwright E2E starts here
-- [ ] i18n full workflow strings + translation QA plan; password reset e-mail
-- [ ] API pagination/idempotency conventions hardened; contracts typed clients
+## M2 — Registration → Appointments → OPD queue ✅ (2026-10-13)
+- [x] patients (+ supervised duplicate detection/merge), patient profile
+- [x] appointments (provider-conflict detection, reschedule/cancel, frozen
+      terminal states), tokens, OPD queue state machine, doctor's
+      authorized queue view
+- [x] Web pages: /patients (search + duplicate-aware registration + profile),
+      /appointments (booking + list), /queue (live board with
+      call/start/complete/skip)
+- [x] i18n: full M2 workflow strings in EN/मराठी/हिंदी
+- [x] API pagination ({items,total,limit,offset}) + Idempotency-Key on
+      POST /patients and POST /opd/queue; contracts regenerated (20 paths)
+- [x] Tests: 48/48 — includes cross-tenant 404s, forged-header test,
+      RBAC matrix (support/auditor see NO patient data), raw RLS proofs,
+      queue state-machine + idempotency-replay proofs
+- [ ] ⏳ Playwright E2E (needs a headless browser in CI; starts M3)
+- [ ] ⏳ Password reset e-mail (needs e-mail provider decision — see M7)
+- [ ] ⏳ Translation QA review by a native speaker (plan in DEPLOYMENT.md)
 
 ## M3 — Consultation → Prescription → Billing → Receipt
 - [ ] encounters, vitals, structured diagnosis; signed Rx with immutable
@@ -63,5 +74,7 @@ implementation sessions continue milestone by milestone.)
 
 ## Backlog / decisions pending owner
 - Edition strategy confirmation (one backend, two frontends)
-- Pilot BP/Sp2 device model for physical validation (M8)
+- Pilot BP/SpO2 device model for physical validation (M8)
 - Hosting provider + payment provider final selection
+- E-mail provider for password reset + appointment reminders (M7 gate)
+- M3 start approval: consultation → prescription → billing → receipt

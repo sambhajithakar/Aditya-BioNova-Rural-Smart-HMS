@@ -7,9 +7,10 @@ import { clearTokens, getAccessToken } from "@/lib/auth";
 import { LANGS, Lang, getLang, setLang, t } from "@/lib/i18n";
 
 const NAV = [
-  { key: "dashboard", href: "#", enabled: true },
-  { key: "patients", href: "#", enabled: false },
-  { key: "queue", href: "#", enabled: false },
+  { key: "dashboard", href: "/dashboard", enabled: true },
+  { key: "patients", href: "/patients", enabled: true },
+  { key: "appointments", href: "/appointments", enabled: true },
+  { key: "queue", href: "/queue", enabled: true },
 ];
 
 export default function DashboardPage() {
@@ -98,15 +99,10 @@ export default function DashboardPage() {
             key={item.key}
             href={item.href}
             className={item.key === "dashboard" ? "active" : undefined}
-            aria-disabled={!item.enabled}
-            title={item.enabled ? undefined : "Coming in M2"}
           >
             {t(item.key, lang)}
           </a>
         ))}
-        <a href="#" aria-disabled="true" title="Coming in M2">
-          {t("patients", lang)}
-        </a>
       </nav>
 
       <main className="page">
@@ -126,7 +122,7 @@ export default function DashboardPage() {
 
         <div className="card" style={{ marginTop: "1.25rem" }}>
           <h2 style={{ marginTop: 0 }}>{t("welcome", lang)}, {me.user.full_name}</h2>
-          <p className="notice">{t("m1Notice", lang)}</p>
+          <p className="notice">{t("m2Notice", lang)}</p>
           <p className="muted" style={{ marginBottom: "0.4rem" }}>
             {t("org", lang)}: <strong>{me.organization.name}</strong> (
             {me.organization.slug}) — {t("role", lang)}:{" "}
@@ -143,11 +139,11 @@ export default function DashboardPage() {
         </div>
 
         <div className="card" style={{ marginTop: "1.25rem" }}>
-          <h3 style={{ marginTop: 0 }}>M1 module checklist</h3>
+          <h3 style={{ marginTop: 0 }}>Module checklist</h3>
           <ul className="muted">
             <li>✅ Authentication, sessions, refresh rotation</li>
             <li>✅ Multi-tenant organizations, branches, RBAC, audit trail</li>
-            <li>⬜ Patients, appointments, OPD queue — milestone M2</li>
+            <li>✅ Patients (supervised duplicate detection), appointments, OPD queue — M2</li>
             <li>⬜ Consultation, e-prescription, billing — milestone M3</li>
             <li>⬜ Offline Android app — milestone M4</li>
           </ul>

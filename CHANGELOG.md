@@ -1,5 +1,30 @@
 # Changelog
 
+## M2 (2026-10-13) — Registration → Appointments → OPD queue
+
+### Added
+- **Patients**: tenant-scoped UHID (`P0000001`…, advisory-lock allocated),
+  registration with **supervised duplicate detection** (phone or name+dob;
+  409 + candidates; explicit override audited), search with pagination,
+  profile, non-destructive supervised **merge** (source retained, read-only).
+- **Appointments**: booking with provider-conflict detection (409 on
+  overlap), reschedule/cancel, frozen terminal states, date/status filters.
+- **OPD queue**: daily tokens (unique per tenant/day, advisory-lock
+  serialized), enforced state machine (waiting→called→in_consultation→
+  completed; skip/recall; terminal frozen), doctor/reception board.
+- **Idempotency-Key** support on POST /patients and POST /opd/queue
+  (stored responses table; replay or 409 on payload mismatch).
+- Clinical RBAC: 7 new permissions mapped to 10 roles; support/auditor
+  deliberately have NO patient-data access (tested).
+- Web: /patients, /appointments, /queue pages + shared AppShell;
+  M2 workflow strings in EN/मराठी/हिंदी.
+- Migration 0005 (4 new tables, all RLS-enabled with strict tenant
+  policies); OpenAPI contract 10 → 20 paths; 15 new tests (48 total).
+
+### Security
+- Cross-tenant clinical identifiers return 404 (no existence leak); forged
+  org headers ignored; raw-SQL RLS proofs extended to the new tables.
+
 All notable changes to Aditya BioNova Rural Smart HMS.
 Format: Keep a Changelog; versions are pre-1.0 milestone tags.
 
