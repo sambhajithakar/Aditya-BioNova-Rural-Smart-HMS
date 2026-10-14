@@ -26,6 +26,9 @@ jobs:
     env:
       HMS_TEST_PORT: "5433"
       HMS_APP_PASSWORD: change_me
+      # libpq (psql + psycopg2) reads PGPASSWORD for roles/DBs whose
+      # password is not embedded in a connection URL (superuser "hms").
+      PGPASSWORD: change_me
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -76,9 +79,9 @@ jobs:
       - name: Install API dependencies
         run: pip install -r apps/api/requirements.txt
       - name: Generate OpenAPI into packages/contracts
-        working-directory: apps/api
-        run: |
-          python -c "import json, pathlib; from app.main import app; spec = app.openapi(); out = pathlib.Path('../../packages/contracts/openapi.json'); out.write_text(json.dumps(spec, indent=2) + '\n'); print('openapi.json written:', len(spec.get('paths', {})), 'paths')"
+        # Same script as local development — single source of truth for
+        # serialization flags (ensure_ascii=False keeps the snapshot stable).
+        run: ./scripts/generate-contracts.sh
       - name: Ensure snapshot is committed
         run: |
           git diff --exit-code packages/contracts/openapi.json \
