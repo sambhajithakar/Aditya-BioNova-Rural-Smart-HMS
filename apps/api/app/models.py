@@ -1059,3 +1059,465 @@ class LedgerEntry(Base):
         Index("ix_ledger_org_invoice", "organization_id", "invoice_id", "id"),
         PrimaryKeyConstraint("id"),
     )
+
+
+# --- M5: pharmacy -----------------------------------------------------------
+
+class StockBatch(Base):
+    """A received batch of one drug at one branch (batch/expiry tracking).
+
+    ``quantity_on_hand`` is a cache maintained by the ``apply_stock_movement``
+    trigger from the append-only ``stock_movements`` ledger — application code
+    never writes it directly.
+    """
+
+    __tablename__ = "stock_batches"
+
+    id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    organization_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    branch_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("branches.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    drug_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("drug_catalog.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    batch_number: Mapped[str] = mapped_column(String(60), nullable=False)
+    expiry_date: Mapped[date] = mapped_column(Date, nullable=False)
+    quantity_received: Mapped[int] = mapped_column(Integer, nullable=False)
+    quantity_on_hand: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    unit_cost: Mapped[float] = mapped_column(
+        Numeric(12, 2), nullable=False, default=0, server_default="0"
+    )
+    supplier: Mapped[str] = mapped_column(
+        String(200), nullable=False, default="", server_default=""
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="active", server_default="active"
+    )
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+    received_by: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "branch_id", "drug_id",
+                         "batch_number", name="uq_batch_org_branch_drug_no"),
+        CheckConstraint("quantity_received > 0",
+                        name="ck_batch_qty_received_positive"),
+        CheckConstraint("quantity_on_hand >= 0",
+                        name="ck_batch_on_hand_nonneg"),
+        CheckConstraint("unit_cost >= 0", name="ck_batch_unit_cost_nonneg"),
+        CheckConstraint(
+            "status IN ('active','depleted','expired','recalled')",
+            name="ck_batch_status",
+        ),
+        Index("ix_batches_org_drug_expiry", "organization_id", "drug_id",
+              "expiry_date"),
+        Index("ix_batches_org_branch", "organization_id", "branch_id"),
+        Index("ix_batches_org_status", "organization_id", "status"),
+    )
+
+
+class Dispense(Base):
+    """A dispensing document. Immutable after creation (corrections are
+    separate return/adjustment movements)."""
+
+    __tablename__ = "dispenses"
+
+    id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    organization_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    branch_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("branches.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    prescription_id: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("prescriptions.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    patient_id: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("patients.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    notes: Mapped[str] = mapped_column(
+        String(500), nullable=False, default="", server_default=""
+    )
+    dispensed_by: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "prescription_id IS NOT NULL OR patient_id IS NOT NULL",
+            name="ck_dispense_has_subject",
+        ),
+        Index("ix_dispenses_org_created", "organization_id", "created_at"),
+        Index("ix_dispenses_org_rx", "organization_id", "prescription_id"),
+    )
+
+
+class DispenseItem(Base):
+    __tablename__ = "dispense_items"
+
+    id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    organization_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    dispense_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("dispenses.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    batch_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("stock_batches.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    drug_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("drug_catalog.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    unit_price: Mapped[float] = mapped_column(
+        Numeric(12, 2), nullable=False, default=0, server_default="0"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="ck_dispitem_qty_positive"),
+        CheckConstraint("unit_price >= 0", name="ck_dispitem_price_nonneg"),
+        Index("ix_dispitem_org_dispense", "organization_id", "dispense_id"),
+        Index("ix_dispitem_org_batch", "organization_id", "batch_id"),
+    )
+
+
+class StockMovement(Base):
+    """Append-only stock ledger (UPDATE/DELETE blocked by trigger).
+
+    The batch's on-hand quantity is exactly SUM(in) - SUM(out); every
+    receive/dispense/adjustment/return writes exactly one row here.
+    """
+
+    __tablename__ = "stock_movements"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    organization_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    batch_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("stock_batches.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    movement_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    direction: Mapped[str] = mapped_column(String(4), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    dispense_id: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("dispenses.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    patient_id: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("patients.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    reason: Mapped[str] = mapped_column(
+        String(300), nullable=False, default="", server_default=""
+    )
+    created_by: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "movement_type IN ('receive','dispense','adjustment','return')",
+            name="ck_movement_type",
+        ),
+        CheckConstraint("direction IN ('in','out')",
+                        name="ck_movement_direction"),
+        CheckConstraint("quantity > 0", name="ck_movement_qty_positive"),
+        Index("ix_movement_org_batch", "organization_id", "batch_id", "id"),
+        PrimaryKeyConstraint("id"),
+    )
+
+
+# --- M5: laboratory ---------------------------------------------------------
+
+class LabTestCatalog(Base):
+    """Global validated lab-test reference (read-only for the app role)."""
+
+    __tablename__ = "lab_test_catalog"
+
+    id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    code: Mapped[str] = mapped_column(String(30), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    specimen_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    unit: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="", server_default=""
+    )
+    reference_range: Mapped[str] = mapped_column(
+        String(120), nullable=False, default="", server_default=""
+    )
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
+
+
+class LabOrder(Base):
+    """Order state machine: ordered -> specimen_collected -> in_progress ->
+    released (or cancelled). Released/cancelled orders are frozen by trigger.
+    """
+
+    __tablename__ = "lab_orders"
+
+    id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    organization_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    patient_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("patients.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    encounter_id: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("encounters.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    branch_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("branches.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="ordered", server_default="ordered"
+    )
+    priority: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="routine", server_default="routine"
+    )
+    clinical_notes: Mapped[str] = mapped_column(
+        Text, nullable=False, default="", server_default=""
+    )
+    cancel_reason: Mapped[str] = mapped_column(
+        String(300), nullable=False, default="", server_default=""
+    )
+    ordered_by: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('ordered','specimen_collected','in_progress',"
+            "'released','cancelled')",
+            name="ck_laborder_status",
+        ),
+        CheckConstraint("priority IN ('routine','urgent')",
+                        name="ck_laborder_priority"),
+        Index("ix_laborder_org_status", "organization_id", "status"),
+        Index("ix_laborder_org_patient", "organization_id", "patient_id"),
+    )
+
+
+class LabSpecimen(Base):
+    """Specimen with per-tenant barcode. Only collected -> rejected is a
+    legal mutation (enforced by trigger)."""
+
+    __tablename__ = "lab_specimens"
+
+    id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    organization_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    order_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("lab_orders.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    barcode: Mapped[str] = mapped_column(String(20), nullable=False)
+    specimen_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="collected",
+        server_default="collected",
+    )
+    rejection_reason: Mapped[str] = mapped_column(
+        String(300), nullable=False, default="", server_default=""
+    )
+    collected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+    collected_by: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "barcode",
+                         name="uq_specimen_org_barcode"),
+        CheckConstraint("status IN ('collected','rejected')",
+                        name="ck_specimen_status"),
+        CheckConstraint(
+            "specimen_type IN ('blood','urine','stool','swab','sputum',"
+            "'tissue','other')",
+            name="ck_specimen_type",
+        ),
+        Index("ix_specimen_org_order", "organization_id", "order_id"),
+    )
+
+
+class LabResult(Base):
+    """Result with the imported -> verified -> released state machine.
+
+    Verification is four-eyes (verifier must differ from importer, enforced
+    in the service layer); released results can only be superseded by a NEW
+    version — content edits are blocked by DB trigger.
+    """
+
+    __tablename__ = "lab_results"
+
+    id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    organization_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    order_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("lab_orders.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    test_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("lab_test_catalog.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    specimen_id: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("lab_specimens.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    value_text: Mapped[str] = mapped_column(
+        String(200), nullable=False, default="", server_default=""
+    )
+    value_numeric: Mapped[float | None] = mapped_column(
+        Numeric(14, 3), nullable=True
+    )
+    unit: Mapped[str] = mapped_column(
+        String(40), nullable=False, default="", server_default=""
+    )
+    reference_range: Mapped[str] = mapped_column(
+        String(120), nullable=False, default="", server_default=""
+    )
+    flag: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="normal", server_default="normal"
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="imported",
+        server_default="imported",
+    )
+    superseded_by_id: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("lab_results.id", ondelete="SET NULL",
+                   deferrable=True, initially="deferred"),
+        nullable=True,
+    )
+    amendment_reason: Mapped[str] = mapped_column(
+        String(300), nullable=False, default="", server_default=""
+    )
+    imported_by: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    verified_by: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    released_by: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    released_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('imported','verified','released','superseded')",
+            name="ck_labresult_status",
+        ),
+        CheckConstraint(
+            "flag IN ('normal','low','high','abnormal','critical')",
+            name="ck_labresult_flag",
+        ),
+        Index("ix_labresult_org_order", "organization_id", "order_id"),
+        Index("ix_labresult_org_status", "organization_id", "status"),
+    )

@@ -18,9 +18,11 @@ from .routers import (
     branches,
     encounters,
     health,
+    lab,
     members,
     opd_queue,
     patients,
+    pharmacy,
     prescriptions,
 )
 
@@ -84,6 +86,8 @@ def create_app() -> FastAPI:
     app.include_router(encounters.router, prefix=BASE_PREFIX)
     app.include_router(prescriptions.router, prefix=BASE_PREFIX)
     app.include_router(billing.router, prefix=BASE_PREFIX)
+    app.include_router(pharmacy.router, prefix=BASE_PREFIX)
+    app.include_router(lab.router, prefix=BASE_PREFIX)
     return app
 
 

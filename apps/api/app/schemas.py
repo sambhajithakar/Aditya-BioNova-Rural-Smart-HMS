@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
@@ -768,3 +768,293 @@ class ReceiptOut(BaseModel):
     branch_name: str
     patient_name: str
     patient_uhid: str
+
+
+# --- M5: pharmacy -----------------------------------------------------------
+_BATCH_STATUSES = ("active", "depleted", "expired", "recalled")
+_MOVEMENT_TYPES = ("receive", "dispense", "adjustment", "return")
+
+
+class ReceiveStockIn(StrictModel):
+    branch_id: uuid.UUID
+    drug_id: uuid.UUID
+    batch_number: str = Field(min_length=1, max_length=60)
+    expiry_date: date
+    quantity: int = Field(gt=0, le=1_000_000)
+    unit_cost: float = Field(default=0, ge=0)
+    supplier: str = Field(default="", max_length=200)
+
+    @field_validator("expiry_date")
+    @classmethod
+    def _future_expiry(cls, v: date) -> date:
+        if v <= date.today():
+            raise ValueError("expiry_date must be in the future")
+        return v
+
+
+class StockBatchOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    branch_id: uuid.UUID
+    drug_id: uuid.UUID
+    generic_name: str = ""
+    batch_number: str
+    expiry_date: date
+    quantity_received: int
+    quantity_on_hand: int
+    unit_cost: float
+    supplier: str
+    status: str
+    received_at: datetime
+
+    @field_validator("status")
+    @classmethod
+    def _status(cls, v: str) -> str:
+        if v not in _BATCH_STATUSES:
+            raise ValueError(f"status must be one of {_BATCH_STATUSES}")
+        return v
+
+
+class AdjustStockIn(StrictModel):
+    """Stock correction: positive quantity IN (found stock), negative OUT
+    (spoilage/breakage). Expiry write-offs use write_off=true (OUT)."""
+
+    quantity: int = Field(default=0)
+    reason: str = Field(min_length=3, max_length=300)
+    write_off: bool = False
+
+
+class DispenseItemIn(StrictModel):
+    drug_id: uuid.UUID
+    quantity: int = Field(gt=0, le=100_000)
+
+
+class DispenseIn(StrictModel):
+    prescription_id: uuid.UUID | None = None
+    patient_id: uuid.UUID | None = None
+    branch_id: uuid.UUID | None = None   # defaults to the FEFO source branch
+    notes: str = Field(default="", max_length=500)
+    items: list[DispenseItemIn] = Field(min_length=1, max_length=100)
+
+    @field_validator("items")
+    @classmethod
+    def _unique_drugs(cls, v: list[DispenseItemIn]) -> list[DispenseItemIn]:
+        ids = [i.drug_id for i in v]
+        if len(set(ids)) != len(ids):
+            raise ValueError("duplicate drug_id in dispense items")
+        return v
+
+
+class DispenseItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    batch_id: uuid.UUID
+    drug_id: uuid.UUID
+    quantity: int
+    unit_price: float
+
+
+class DispenseOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    branch_id: uuid.UUID
+    prescription_id: uuid.UUID | None
+    patient_id: uuid.UUID | None
+    notes: str
+    created_at: datetime
+    items: list[DispenseItemOut] = []
+
+
+class StockMovementOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    batch_id: uuid.UUID
+    movement_type: str
+    direction: str
+    quantity: int
+    dispense_id: uuid.UUID | None
+    reason: str
+    created_at: datetime
+
+    @field_validator("movement_type")
+    @classmethod
+    def _mtype(cls, v: str) -> str:
+        if v not in _MOVEMENT_TYPES:
+            raise ValueError(f"movement_type must be one of {_MOVEMENT_TYPES}")
+        return v
+
+
+class StockAlertOut(BaseModel):
+    """FEFO / expiry monitoring report."""
+
+    expiring_soon: list[StockBatchOut] = []   # <= 90 days
+    expired: list[StockBatchOut] = []         # past expiry, still on hand
+    low_stock: list[dict] = []                # drug-level on-hand summary
+
+
+# --- M5: laboratory ---------------------------------------------------------
+_LAB_FLAGS = ("normal", "low", "high", "abnormal", "critical")
+
+
+class LabTestOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    code: str
+    name: str
+    specimen_type: str
+    unit: str
+    reference_range: str
+
+
+class LabOrderIn(StrictModel):
+    patient_id: uuid.UUID
+    branch_id: uuid.UUID
+    encounter_id: uuid.UUID | None = None
+    priority: str = "routine"
+    clinical_notes: str = Field(default="", max_length=2000)
+    test_ids: list[uuid.UUID] = Field(min_length=1, max_length=30)
+
+    @field_validator("priority")
+    @classmethod
+    def _priority(cls, v: str) -> str:
+        if v not in ("routine", "urgent"):
+            raise ValueError("priority must be 'routine' or 'urgent'")
+        return v
+
+    @field_validator("test_ids")
+    @classmethod
+    def _unique_tests(cls, v: list[uuid.UUID]) -> list[uuid.UUID]:
+        if len(set(v)) != len(v):
+            raise ValueError("duplicate test_ids")
+        return v
+
+
+class LabResultOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    order_id: uuid.UUID
+    test_id: uuid.UUID
+    specimen_id: uuid.UUID | None
+    value_text: str
+    value_numeric: float | None
+    unit: str
+    reference_range: str
+    flag: str
+    status: str
+    superseded_by_id: uuid.UUID | None
+    amendment_reason: str
+    verified_at: datetime | None
+    released_at: datetime | None
+    created_at: datetime
+
+    @field_validator("flag")
+    @classmethod
+    def _flag(cls, v: str) -> str:
+        if v not in _LAB_FLAGS:
+            raise ValueError(f"flag must be one of {_LAB_FLAGS}")
+        return v
+
+    @field_validator("status")
+    @classmethod
+    def _status(cls, v: str) -> str:
+        if v not in ("imported", "verified", "released", "superseded"):
+            raise ValueError("illegal lab result status")
+        return v
+
+
+class LabOrderOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    patient_id: uuid.UUID
+    encounter_id: uuid.UUID | None
+    branch_id: uuid.UUID
+    status: str
+    priority: str
+    clinical_notes: str
+    cancel_reason: str
+    created_at: datetime
+
+    @field_validator("status")
+    @classmethod
+    def _status(cls, v: str) -> str:
+        if v not in ("ordered", "specimen_collected", "in_progress",
+                     "released", "cancelled"):
+            raise ValueError("illegal lab order status")
+        return v
+
+
+class LabOrderDetailOut(LabOrderOut):
+    specimens: list["LabSpecimenOut"] = []
+    results: list[LabResultOut] = []
+
+
+class LabSpecimenOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    order_id: uuid.UUID
+    barcode: str
+    specimen_type: str
+    status: str
+    rejection_reason: str
+    collected_at: datetime
+
+
+class CollectSpecimenIn(StrictModel):
+    specimen_type: str
+
+    @field_validator("specimen_type")
+    @classmethod
+    def _stype(cls, v: str) -> str:
+        if v not in ("blood", "urine", "stool", "swab", "sputum",
+                     "tissue", "other"):
+            raise ValueError("illegal specimen_type")
+        return v
+
+
+class RejectSpecimenIn(StrictModel):
+    reason: str = Field(min_length=3, max_length=300)
+
+
+class LabResultValueIn(StrictModel):
+    test_id: uuid.UUID
+    value_text: str = Field(default="", max_length=200)
+    value_numeric: float | None = None
+    flag: str = "normal"
+
+    @field_validator("flag")
+    @classmethod
+    def _flag(cls, v: str) -> str:
+        if v not in _LAB_FLAGS:
+            raise ValueError(f"flag must be one of {_LAB_FLAGS}")
+        return v
+
+
+class ImportResultsIn(StrictModel):
+    specimen_id: uuid.UUID | None = None
+    results: list[LabResultValueIn] = Field(min_length=1, max_length=30)
+
+
+class AmendResultIn(StrictModel):
+    value_text: str = Field(default="", max_length=200)
+    value_numeric: float | None = None
+    flag: str = "normal"
+    reason: str = Field(min_length=3, max_length=300)
+
+    @field_validator("flag")
+    @classmethod
+    def _flag(cls, v: str) -> str:
+        if v not in _LAB_FLAGS:
+            raise ValueError(f"flag must be one of {_LAB_FLAGS}")
+        return v
+
+
+class CancelLabOrderIn(StrictModel):
+    reason: str = Field(min_length=3, max_length=300)
