@@ -372,6 +372,25 @@ def post_import_results(
             status_code=422, detail="Duplicate test_id in results payload"
         )
 
+    # exactly one LIVE result per test per order (uq_labresult_live_per_test):
+    # re-importing a test must go through the amendment path instead of
+    # tripping the partial unique index.
+    live = db.scalars(
+        select(LabResult.test_id).where(
+            LabResult.organization_id == principal.organization_id,
+            LabResult.order_id == order.id,
+            LabResult.status != "superseded",
+            LabResult.test_id.in_(test_ids),
+        )
+    ).all()
+    if live:
+        raise HTTPException(
+            status_code=409,
+            detail=("Result already imported for test(s): "
+                    + ", ".join(sorted(str(t) for t in live))
+                    + " — amend the released result instead"),
+        )
+
     specimen = None
     if payload.specimen_id is not None:
         specimen = db.scalar(
@@ -452,6 +471,9 @@ def _transition_result(
         result.released_at = now
     result.status = new_status
     result.updated_at = now
+    # autoflush is OFF app-wide: flush here so callers that immediately query
+    # (e.g. the release endpoint counting pending results) see this change.
+    db.flush()
     record_event(
         db,
         action=action,

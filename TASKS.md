@@ -69,9 +69,29 @@ implementation sessions continue milestone by milestone.)
 - [ ] airplane-mode, restart-recovery, duplicate-prevention test matrix on
       entry-level devices; signed release build process (keys never committed)
 
-## M5 — Pharmacy + Laboratory
-- [ ] stock/batch/expiry/FEFO, dispensing permissions
-- [ ] lab orders/specimens/results with imported→verified→released states
+## M5 — Pharmacy + Laboratory ✅ (2026-10-15, API)
+- [x] stock in batches with explicit expiry against the validated drug
+      catalog (no free-text stock); receiving writes the batch AND its
+      opening ledger row; FEFO allocation locks batches in expiry order;
+      reason-coded adjustments; expiring/expired/low-stock alert report
+- [x] DB-enforced stock integrity: append-only `stock_movements` ledger with
+      trigger-maintained on-hand (SUM(in)-SUM(out)), expired stock cannot
+      be dispensed, recalled batches frozen, dispense documents immutable
+- [x] dispensing against SIGNED prescriptions only (items must be on the
+      Rx; OTC against a registered patient); `Idempotency-Key` replay
+- [x] lab orders → specimens (unique per-tenant barcode, reject transition)
+      → results with the imported → verified → released state machine;
+      FOUR-EYES verification (verifier ≠ importer); released results are
+      immutable — supersession-only amendments (deferrable FK + partial
+      unique index on live results); released/cancelled orders frozen
+- [x] RBAC for all 8 M5 permissions (pharmacist & lab_technician roles;
+      least privilege for support/auditor); cross-tenant 404s; raw RLS
+      proofs for all 7 new tables
+- [x] Tests: 89/89 (17 M5) — FEFO split across batches, ledger invariant,
+      trigger backstops proven with raw SQL, RBAC matrix, four-eyes,
+      amendment supersession, idempotency replay
+- [ ] ⏳ M5 web pages (dispensary + lab worklist) — not in milestone scope;
+      plan with the M4 Flutter app or a web sprint
 
 ## M6 — IPD + operations
 - [ ] wards/beds/nursing/discharge flow; inventory, expenses, reports

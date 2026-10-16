@@ -1,5 +1,53 @@
 # Changelog
 
+## M5 (2026-10-15) — Pharmacy + Laboratory (API)
+
+### Added
+- **Pharmacy stock**: batches with explicit expiry against the validated
+  `drug_catalog` (free-text stock is impossible); receiving writes the
+  batch AND its opening ledger row in one transaction; **FEFO allocation**
+  locks batches in expiry order and splits across batches; reason-coded
+  adjustments (found stock IN, spoilage/write-off OUT);
+  `Idempotency-Key` replay on receiving and dispensing; expiring-soon /
+  expired / low-stock alert report.
+- **Stock integrity (DB-enforced)**: append-only `stock_movements` ledger
+  (trigger + revoked grants) whose sums maintain the cached on-hand
+  quantity — negative stock is impossible even via raw SQL; **expired
+  stock cannot be dispensed** (only written off); **recalled batches are
+  frozen**; dispense documents are corrections-by-return, never edited.
+- **Dispensing**: against **signed prescriptions only**, restricted to the
+  drugs written on the Rx (no free substitution), or OTC against a
+  registered patient; every dispense records batch-level traceability.
+- **Laboratory**: orders → specimens (unique per-tenant barcode, reject
+  transition) → results with the **imported → verified → released** state
+  machine; **four-eyes verification** (the verifier must differ from the
+  importer); released results are immutable — **supersession-only
+  amendments** (new audited version, deferrable FK + partial unique index
+  on live results); released/cancelled orders frozen except the audited
+  amendment reopen.
+- **RBAC**: 8 new permissions (`pharmacy.*`, `lab.*`) across the role
+  catalogue, including new **pharmacist** and **lab_technician** grant
+  sets; support/auditor keep zero clinical access (least privilege).
+- **Tests**: 17 new (89 total) — FEFO split/drain order, ledger invariant
+  (SUM(in)-SUM(out) == on-hand), raw-SQL trigger backstops (expired,
+  recalled, append-only, immutable dispenses/results/specimens), four-eyes
+  and state-machine coverage, RBAC matrix, cross-tenant 404s and raw RLS
+  proofs for all 7 new tables.
+
+### Fixed
+- `POST /pharmacy/dispenses` without `branch_id` 500'd: `_infer_branch`
+  indexed the scalar returned by `db.scalar()` (`'UUID' object is not
+  subscriptable`).
+- Releasing the last lab result left the order in `in_progress`: the
+  session runs with `autoflush=False`, so the pending-result count read a
+  stale status — transitions now flush before callers query.
+- Re-importing a test that already had a live result tripped the partial
+  unique index (500). It is now a clean 409 pointing at the amendment path.
+- The `0007` trigger froze released lab orders so tightly that the
+  audited amendment reopen (`released → in_progress`) was impossible; the
+  trigger now allows exactly that one transition while keeping the order
+  header frozen.
+
 ## M3 (2026-10-13) — Consultation → Prescription → Billing → Receipt
 
 ### Added

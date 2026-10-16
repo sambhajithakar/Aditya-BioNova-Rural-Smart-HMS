@@ -475,7 +475,7 @@ def _infer_branch(db: Session, principal: Principal, payload: DispenseIn) -> uui
             status_code=409,
             detail="No branch holds stock for the requested drug",
         )
-    return row[0]
+    return row
 
 
 @router.get("/dispenses", response_model=PageOut)

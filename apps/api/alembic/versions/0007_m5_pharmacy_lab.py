@@ -651,17 +651,26 @@ def upgrade() -> None:
         BEFORE UPDATE OR DELETE ON lab_results
         FOR EACH ROW EXECUTE FUNCTION forbid_labresult_mutation();
     """)
-    # released/cancelled orders are frozen header-wise
+    # released/cancelled orders are frozen header-wise. The ONE legal move
+    # out of 'released' is the audited amendment path (released ->
+    # in_progress when a new result version is imported for re-verification);
+    # patient/branch/priority are frozen at every step.
     op.execute("""
         CREATE OR REPLACE FUNCTION forbid_closed_laborder() RETURNS trigger AS $$
         BEGIN
-            IF OLD.status IN ('released', 'cancelled') AND (
-                NEW.status <> OLD.status
-                OR NEW.patient_id <> OLD.patient_id
-                OR NEW.branch_id <> OLD.branch_id
-                OR NEW.priority <> OLD.priority
-            ) THEN
-                RAISE EXCEPTION 'lab order % is % and frozen', OLD.id, OLD.status;
+            IF NEW.patient_id <> OLD.patient_id
+               OR NEW.branch_id <> OLD.branch_id
+               OR NEW.priority <> OLD.priority THEN
+                RAISE EXCEPTION 'lab order % header is frozen', OLD.id;
+            END IF;
+            IF OLD.status = 'cancelled' AND NEW.status <> 'cancelled' THEN
+                RAISE EXCEPTION 'lab order % is cancelled and frozen', OLD.id;
+            END IF;
+            IF OLD.status = 'released'
+               AND NEW.status NOT IN ('released', 'in_progress') THEN
+                RAISE EXCEPTION
+                    'lab order % is released; only an amendment reopens it',
+                    OLD.id;
             END IF;
             RETURN NEW;
         END;
