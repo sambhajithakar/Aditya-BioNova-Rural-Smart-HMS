@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Provision local PostgreSQL roles/databases for Aditya BioNova Rural Smart HMS.
+# Provision local PostgreSQL roles/databases for Aditya BioNova Smart HMS.
 # Repeatable & idempotent. Requires a running PostgreSQL reachable via
 # PGHOST/PGPORT/PGUSER (defaults: 127.0.0.1:5433, superuser "hms").
 #

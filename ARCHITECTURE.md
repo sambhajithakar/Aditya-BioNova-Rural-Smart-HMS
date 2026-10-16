@@ -1,4 +1,4 @@
-# Architecture — Aditya BioNova Rural Smart HMS (M1)
+# Architecture — Aditya BioNova Smart HMS (M1)
 
 ## Style: modular monolith
 

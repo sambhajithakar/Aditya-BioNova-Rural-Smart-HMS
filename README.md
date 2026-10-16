@@ -1,8 +1,7 @@
-# Aditya BioNova Rural Smart HMS
+# Aditya BioNova Smart HMS
 
 Multi-tenant Hospital & Clinic Management System for Indian clinics and
-hospitals — built for real-world rural and semi-urban deployments:
-offline-first mobile workflows (M4+), trilingual UI (English / मराठी / हिंदी),
+hospitals — offline-first mobile workflows (M4+), trilingual UI (English / मराठी / हिंदी),
 role-based access, audit trails and a commercial SaaS business layer.
 
 > **Status: Milestone M1 — Foundation (this repository).**
@@ -15,7 +14,7 @@ role-based access, audit trails and a commercial SaaS business layer.
 ## Repository layout
 
 ```
-Aditya-BioNova-Rural-Smart-HMS/
+Aditya-BioNova-Smart-HMS/
 ├── apps/
 │   ├── api/            FastAPI + PostgreSQL backend (versioned /api/v1)
 │   │   ├── app/        application code (routers, models, security, RLS context)

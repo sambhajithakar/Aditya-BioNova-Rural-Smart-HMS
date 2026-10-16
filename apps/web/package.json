@@ -2,7 +2,7 @@
   "name": "@aditya-bionova/web",
   "version": "0.1.0-m1",
   "private": true,
-  "description": "Aditya BioNova Rural Smart HMS — web portals (reception, doctor, admin)",
+  "description": "Aditya BioNova Smart HMS — web portals (reception, doctor, admin)",
   "scripts": {
     "dev": "next dev",
     "dev:host": "next dev -H 0.0.0.0",

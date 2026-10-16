@@ -1,4 +1,4 @@
-# Aditya BioNova Rural Smart HMS — web image (multi-stage Next.js build).
+# Aditya BioNova Smart HMS — web image (multi-stage Next.js build).
 FROM node:22-alpine AS build
 WORKDIR /app
 COPY apps/web/package.json apps/web/package-lock.json ./

@@ -1,4 +1,4 @@
-# Requirements — Aditya BioNova Rural Smart HMS
+# Requirements — Aditya BioNova Smart HMS
 
 Source: the two official project PDFs (Complete Expanded Blueprint 2026 and
 Final Product Layout & Competitor Study 2026) plus the Master Prompt.
@@ -40,7 +40,7 @@ Final Product Layout & Competitor Study 2026) plus the Master Prompt.
   drugs), allergy checks before prescribing (blocking + acknowledged), only
   `prescription.sign` holders (doctor/owner/admin) sign — all tested.
 
-## 4. Rural & offline (M4+)
+## 4. Offline-first mobile (M4+)
 - R4.1 ⬜ Flutter Android app (Doctor + Staff apps) sharing this backend:
   secure login, dashboard, registration, queue, consultation, Fast Rx, vitals,
   billing, notifications.

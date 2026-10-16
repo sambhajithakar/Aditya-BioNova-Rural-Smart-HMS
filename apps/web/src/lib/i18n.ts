@@ -16,7 +16,7 @@ type Dict = Record<string, string>;
 
 const dictionaries: Record<Lang, Dict> = {
   en: {
-    brand: "Aditya BioNova Rural Smart HMS",
+    brand: "Aditya BioNova Smart HMS",
     signIn: "Sign in",
     email: "Email",
     password: "Password",
@@ -130,7 +130,7 @@ const dictionaries: Record<Lang, Dict> = {
       "M3 build: consultation workspace, signed prescriptions with allergy checks, billing and receipts are live.",
   },
   mr: {
-    brand: "आदित्य बायोनोवा ग्रामीण स्मार्ट एचएमएस",
+    brand: "आदित्य बायोनोवा स्मार्ट एचएमएस",
     signIn: "साइन इन",
     email: "ईमेल",
     password: "पासवर्ड",
@@ -244,7 +244,7 @@ const dictionaries: Record<Lang, Dict> = {
       "एम3 आवृत्ती: सल्लागार कार्यक्षेत्र, ऍलर्जी तपासणीसह सही केलेली औषधपत्रे, बिलिंग आणि पावत्या चालू आहेत.",
   },
   hi: {
-    brand: "आदित्य बायोनोवा ग्रामीण स्मार्ट एचएमएस",
+    brand: "आदित्य बायोनोवा स्मार्ट एचएमएस",
     signIn: "साइन इन",
     email: "ईमेल",
     password: "पासवर्ड",

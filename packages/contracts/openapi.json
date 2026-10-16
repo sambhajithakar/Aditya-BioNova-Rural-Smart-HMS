@@ -1,8 +1,8 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Aditya BioNova Rural Smart HMS API",
-    "description": "Aditya BioNova Rural Smart HMS — multi-tenant clinic & hospital management API. Synthetic/development data only; no real patient data.",
+    "title": "Aditya BioNova Smart HMS API",
+    "description": "Aditya BioNova Smart HMS — multi-tenant clinic & hospital management API. Synthetic/development data only; no real patient data.",
     "version": "0.1.0-m1"
   },
   "paths": {

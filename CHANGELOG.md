@@ -66,7 +66,7 @@
 - Cross-tenant clinical identifiers return 404 (no existence leak); forged
   org headers ignored; raw-SQL RLS proofs extended to the new tables.
 
-All notable changes to Aditya BioNova Rural Smart HMS.
+All notable changes to Aditya BioNova Smart HMS.
 Format: Keep a Changelog; versions are pre-1.0 milestone tags.
 
 ## [0.1.0-m1] — 2026-10-12 — Milestone M1 (Foundation)

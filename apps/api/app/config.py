@@ -16,7 +16,7 @@ class Settings(BaseSettings):
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
 
-    app_name: str = "Aditya BioNova Rural Smart HMS API"
+    app_name: str = "Aditya BioNova Smart HMS API"
     environment: str = "development"
 
     # Runtime data access: the NON-OWNER application role. PostgreSQL row-level

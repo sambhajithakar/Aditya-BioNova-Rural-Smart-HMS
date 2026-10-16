@@ -5,7 +5,7 @@ pending work is labelled explicitly. (M1 scope approved by the product owner;
 implementation sessions continue milestone by milestone.)
 
 ## M1 — Foundation + secure multi-tenant core ✅ (2026-10-12)
-- [x] Isolated repository `Aditya-BioNova-Rural-Smart-HMS` (existing
+- [x] Isolated repository `Aditya-BioNova-Smart-HMS` (existing
       website/OncoTrial untouched)
 - [x] Monorepo: apps/api, apps/web, packages/contracts, infra/docker, CI
 - [x] Postgres schema + Alembic migrations 0001–0004

@@ -1,4 +1,4 @@
-# Aditya BioNova Rural Smart HMS — API image (prebuilt source, no secrets).
+# Aditya BioNova Smart HMS — API image (prebuilt source, no secrets).
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

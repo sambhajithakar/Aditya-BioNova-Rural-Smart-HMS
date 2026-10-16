@@ -190,7 +190,7 @@ export default function PrintPage() {
       <header className="print-head">
         <div>
           <h1>{tri(L.prescription)}</h1>
-          <p className="tri">Aditya BioNova Rural Smart HMS</p>
+          <p className="tri">Aditya BioNova Smart HMS</p>
         </div>
         <div style={{ textAlign: "right" }}>
           <p>

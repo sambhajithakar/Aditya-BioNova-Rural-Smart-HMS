@@ -37,7 +37,7 @@ def create_app() -> FastAPI:
         title=settings.app_name,
         version=__version__,
         description=(
-            "Aditya BioNova Rural Smart HMS — multi-tenant clinic & hospital "
+            "Aditya BioNova Smart HMS — multi-tenant clinic & hospital "
             "management API. Synthetic/development data only; no real patient data."
         ),
         openapi_url=f"{BASE_PREFIX}/openapi.json",
