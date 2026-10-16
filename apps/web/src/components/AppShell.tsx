@@ -17,6 +17,8 @@ const NAV: { key: string; href: string }[] = [
   { key: "queue", href: "/queue" },
   { key: "consultation", href: "/consultation" },
   { key: "billing", href: "/billing" },
+  { key: "pharmacy", href: "/pharmacy" },
+  { key: "lab", href: "/lab" },
 ];
 
 export function AppShell({

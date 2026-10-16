@@ -28,6 +28,12 @@
 - **RBAC**: 8 new permissions (`pharmacy.*`, `lab.*`) across the role
   catalogue, including new **pharmacist** and **lab_technician** grant
   sets; support/auditor keep zero clinical access (least privilege).
+- **Web**: `/pharmacy` (expiring/expired/low-stock alerts, receive stock,
+  FEFO dispensing against a signed prescription or OTC with branch
+  inference, batch table, movement ledger) and `/lab` (order creation
+  against the validated test catalog, specimen collection with barcodes
+  and rejection, import → verify → release → amend worklist) — full
+  EN/मराठी/हिंदी strings, navigation entry for both modules.
 - **Tests**: 17 new (89 total) — FEFO split/drain order, ledger invariant
   (SUM(in)-SUM(out) == on-hand), raw-SQL trigger backstops (expired,
   recalled, append-only, immutable dispenses/results/specimens), four-eyes

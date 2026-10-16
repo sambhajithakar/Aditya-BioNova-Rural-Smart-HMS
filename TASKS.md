@@ -69,7 +69,7 @@ implementation sessions continue milestone by milestone.)
 - [ ] airplane-mode, restart-recovery, duplicate-prevention test matrix on
       entry-level devices; signed release build process (keys never committed)
 
-## M5 — Pharmacy + Laboratory ✅ (2026-10-15, API)
+## M5 — Pharmacy + Laboratory ✅ (2026-10-16)
 - [x] stock in batches with explicit expiry against the validated drug
       catalog (no free-text stock); receiving writes the batch AND its
       opening ledger row; FEFO allocation locks batches in expiry order;
@@ -90,8 +90,13 @@ implementation sessions continue milestone by milestone.)
 - [x] Tests: 89/89 (17 M5) — FEFO split across batches, ledger invariant,
       trigger backstops proven with raw SQL, RBAC matrix, four-eyes,
       amendment supersession, idempotency replay
-- [ ] ⏳ M5 web pages (dispensary + lab worklist) — not in milestone scope;
-      plan with the M4 Flutter app or a web sprint
+- [x] Web pages: /pharmacy (expiry/low-stock alerts, receive stock, FEFO
+      dispensing against a signed Rx or OTC, batch & movement ledger) and
+      /lab (order creation against the test catalog, specimen barcodes,
+      import → verify → release → amend worklist) — EN/मराठी/हिंदी
+- [x] Live flow verified through the web origin (page's own API path):
+      receive → alerts → OTC dispense with branch inference; lab order →
+      specimen → import → four-eyes 403 → second-person verify → release
 
 ## M6 — IPD + operations
 - [ ] wards/beds/nursing/discharge flow; inventory, expenses, reports

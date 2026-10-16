@@ -307,3 +307,115 @@ export type Receipt = {
   patient_name: string;
   patient_uhid: string;
 };
+
+// --- M5 pharmacy types -------------------------------------------------------
+export type StockBatch = {
+  id: string;
+  branch_id: string;
+  drug_id: string;
+  generic_name: string;
+  batch_number: string;
+  expiry_date: string;
+  quantity_received: number;
+  quantity_on_hand: number;
+  unit_cost: number;
+  supplier: string;
+  status: string;
+  received_at: string;
+};
+
+export type StockMovement = {
+  id: number;
+  batch_id: string;
+  movement_type: string;
+  direction: string;
+  quantity: number;
+  dispense_id: string | null;
+  reason: string;
+  created_at: string;
+};
+
+export type DispenseItem = {
+  id: string;
+  batch_id: string;
+  drug_id: string;
+  quantity: number;
+  unit_price: number;
+};
+
+export type Dispense = {
+  id: string;
+  branch_id: string;
+  prescription_id: string | null;
+  patient_id: string | null;
+  notes: string;
+  created_at: string;
+  items?: DispenseItem[];
+};
+
+export type LowStockEntry = {
+  drug_id: string;
+  generic_name: string;
+  on_hand: number;
+};
+
+export type StockAlerts = {
+  expiring_soon: StockBatch[];
+  expired: StockBatch[];
+  low_stock: LowStockEntry[];
+};
+
+// --- M5 laboratory types -----------------------------------------------------
+export type LabTest = {
+  id: string;
+  code: string;
+  name: string;
+  specimen_type: string;
+  unit: string;
+  reference_range: string;
+};
+
+export type LabOrder = {
+  id: string;
+  patient_id: string;
+  encounter_id: string | null;
+  branch_id: string;
+  status: string;
+  priority: string;
+  clinical_notes: string;
+  cancel_reason: string;
+  created_at: string;
+};
+
+export type LabSpecimen = {
+  id: string;
+  order_id: string;
+  barcode: string;
+  specimen_type: string;
+  status: string;
+  rejection_reason: string;
+  collected_at: string;
+};
+
+export type LabResult = {
+  id: string;
+  order_id: string;
+  test_id: string;
+  specimen_id: string | null;
+  value_text: string;
+  value_numeric: number | null;
+  unit: string;
+  reference_range: string;
+  flag: string;
+  status: string;
+  superseded_by_id: string | null;
+  amendment_reason: string;
+  verified_at: string | null;
+  released_at: string | null;
+  created_at: string;
+};
+
+export type LabOrderDetail = LabOrder & {
+  specimens: LabSpecimen[];
+  results: LabResult[];
+};
