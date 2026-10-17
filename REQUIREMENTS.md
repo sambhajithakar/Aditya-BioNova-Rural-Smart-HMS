@@ -41,19 +41,31 @@ Final Product Layout & Competitor Study 2026) plus the Master Prompt.
   `prescription.sign` holders (doctor/owner/admin) sign — all tested.
 
 ## 4. Offline-first mobile (M4+)
-- R4.1 ⬜ Flutter Android app (Doctor + Staff apps) sharing this backend:
-  secure login, dashboard, registration, queue, consultation, Fast Rx, vitals,
-  billing, notifications.
-- R4.2 ⬜ Offline-first: encrypted local SQLite, outbox queue, explicit sync
-  states (Saved on device / Pending sync / Synced / Conflict), idempotent
-  server operations, conflict queue — **never last-write-wins for
-  prescriptions or clinical records**; UPI success only after provider
-  confirmation.
+- R4.1 🟡 Flutter Android app (Doctor + Staff apps) sharing this backend —
+  one role-aware binary (Staff: register → queue → billing; Doctor: Fast
+  Rx) with secure login, registration, queue, Fast Rx drafts and billing,
+  all offline-first and tested (40/40). Still open: dashboard,
+  consultation/vitals workspace and notifications on mobile (the web app
+  covers them today).
+- R4.2 🟡 Offline-first delivered: **encrypted local storage** (the whole
+  offline state is AES-256-GCM sealed; key + session tokens in the Android
+  Keystore — a deliberate evolution of "encrypted local SQLite": the app
+  stores no SQL yet, and will move to SQLCipher when it does), outbox
+  queue with idempotent server operations, explicit sync states (Saved on
+  device / Pending sync / Synced / Conflict), conflict queue resolved by a
+  human — **never last-write-wins for prescriptions or clinical records**;
+  prescription signing is online-only so the server's allergy gate always
+  runs. Still open: UPI success only after provider confirmation (M7).
 - R4.3 ⬜ Performance targets (measured in pilot): local save <2s, return-
   patient lookup ~30s→target faster, standard Rx median <60s, airplane-mode
-  visit works, no duplicates after sync retries; entry-level Android hardware.
-- R4.4 ⬜ Loss/device policy: encrypted storage, session expiry, remote
-  revocation, documented lost-device response.
+  visit works, no duplicates after sync retries; entry-level Android
+  hardware. (The offline/duplicate behaviour is proven in the Dart test
+  harness; the hardware measurements need the pilot devices.)
+- R4.4 🟡 Loss/device policy: encrypted storage ✅, session expiry and
+  server-side revocation ✅ (refresh-token rotation with reuse detection,
+  logout revocation), lost-device response runbook ✅ documented in
+  SECURITY_CHECKLIST.md; remote kill-switch for a specific device is not
+  built yet (tokens are revocable server-side in the meantime).
 
 ## 5. Languages & UX
 - R5.1 ✅ Language switcher scaffolding with EN/मराठी/हिंदी dictionaries and

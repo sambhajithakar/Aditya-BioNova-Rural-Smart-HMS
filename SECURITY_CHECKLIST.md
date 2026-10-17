@@ -43,7 +43,9 @@ review, DPDP/ABDM/CDSCO legal assessment and clinical safety review are
 - ✅ Audit trail append-only (policy + grants + trigger; tested for owner and app role)
 - ✅ Parameterized SQL everywhere (SQLAlchemy core/text params)
 - 🟡 Encryption at rest: delegated to disk/volume encryption at deployment;
-  mobile DB will be SQLCipher-encrypted (M4)
+  the M4 mobile offline store is AES-256-GCM sealed with the key in the
+  Android Keystore (tested: no plaintext at rest, tamper/wrong-key
+  detection). SQLCipher when the app grows a local SQL store.
 - ⬜ Backups + restore drills (DEPLOYMENT.md drafts procedure; execute in M7)
 - ⬜ Secrets manager, key rotation, rate limiting (M7)
 
@@ -63,4 +65,25 @@ review, DPDP/ABDM/CDSCO legal assessment and clinical safety review are
 
 ## Incident & operations
 - ⬜ Incident response plan, patch management, support escalation (M7–M9)
-- ⬜ Lost-device response runbook (M4)
+- ✅ Lost-device response runbook (M4) — see below
+
+## Lost-device response (M4 runbook)
+1. **Contain**: the user (or an admin) calls `POST /auth/logout` from any
+   device — it revokes that session's tokens. Refresh tokens are
+   single-use with reuse detection, so replaying a stolen token revokes the
+   whole family; a lost device cannot mint new tokens.
+2. **Verify**: an owner/admin reviews `GET /audit-events` for the device's
+   user — every PHI read/write is recorded with actor, resource, IP and
+   correlation id.
+3. **Re-issue**: reset the user's password (owner/admin, M7 will automate
+   the e-mail path); the next login issues fresh tokens.
+4. **Data at rest on the device**: the offline store is AES-256-GCM sealed
+   and the key lives in the Android Keystore — extraction of the app
+   sandbox yields neither PHI nor tokens. Nothing to wipe beyond the normal
+   remote-wipe step of the MDM/Google account.
+5. **Record** the incident (date, user, device, containment steps) in the
+   clinic's register; support escalates to security review if audit shows
+   data access after the loss.
+
+Not built yet: a per-device "kill switch" beyond token revocation, and MDM
+integration — labelled as open, not claimed.

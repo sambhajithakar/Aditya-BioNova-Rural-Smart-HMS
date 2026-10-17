@@ -62,12 +62,48 @@ implementation sessions continue milestone by milestone.)
 - [ ] ⏳ Real payment gateway in sandbox (Razorpay/Cashfree/PhonePe
       shortlist) — M7 gate; M3 ships the local sandbox simulation only
 
-## M4 — Android app + offline core (Flutter)
-- [ ] app shells (Doctor/Staff), secure login, encrypted SQLite + outbox
-- [ ] registration/queue/Rx-draft/billing workflows offline; conflict queue
-      (no last-write-wins on clinical data); sync-centre UI
-- [ ] airplane-mode, restart-recovery, duplicate-prevention test matrix on
-      entry-level devices; signed release build process (keys never committed)
+## M4 — Android app + offline core (Flutter) ✅ (2026-10-17) — device QA pending
+- [x] app shells: ONE binary with two role-aware apps (Staff = register →
+      queue → billing; Doctor = queue → Fast Rx), switched by the role the
+      server reports on `/auth/me`; secure login against the real
+      `POST /auth/login` contract (failures surface the server's `detail`)
+- [x] encrypted local storage: the whole offline state is one AES-256-GCM
+      sealed file (fresh random nonce per write, `HMS1` as AAD, atomic
+      temp-file + rename writes); the AES key and the session tokens live
+      in the Android Keystore (`flutter_secure_storage`) — no PHI and no
+      token is readable at rest on a lost/stolen device
+- [x] offline workflows through the outbox: **registration, OPD queue,
+      Fast Rx draft (validated drug catalog only — never free-text
+      medication), billing** — every mutation carries a client UUID as the
+      server `Idempotency-Key`, and per-workflow dedupe keys collapse a
+      double-tap into ONE op (no double-booking, no double invoice)
+- [x] local → server id map: a patient registered offline gets a device id;
+      dependent ops reference it as `$ref:<local>` and the sync engine
+      swaps in the server id before pushing — a still-unresolved reference
+      DEFERS the op instead of ever attaching a queue entry/Rx/invoice to
+      the wrong patient; `$ref` never reaches the API
+- [x] conflict queue (no last-write-wins): 409/412 and policy rejections
+      park the op in the sync centre with explicit "Keep local (re-send)" /
+      "Discard" resolution; explicit sync states per queued item —
+      Saved on device · Pending sync · Syncing… · Synced · Conflict
+- [x] restart recovery: outbox, directory cache, id map and Rx drafts are
+      persisted on every change and restored by `AppGraph.open()`; signing
+      a prescription is online-only (the server's blocking allergy check
+      and `prescription.sign` permission must see the patient first)
+- [x] signed release build process: `android/app/build.gradle.kts` reads
+      `android/key.properties`; `key.properties`, `*.keystore` and `*.jks`
+      are git-ignored (verified), so keys can never enter the repo; without
+      the file the build falls back to the debug key and says so
+- [x] Tests: 40/40 — outbox dedupe/serialize/restore, sync-engine outcome
+      matrix, id-map substitution + deferral, encrypted store (round trip,
+      NO plaintext at rest, tamper and wrong-key detection, atomic writes),
+      end-to-end restart recovery, and the offline registration/queue/Rx/
+      billing widget flows (including the role gate and sign-after-sync)
+- [ ] ⏳ Device QA: airplane-mode visit, restart recovery and the duplicate
+      matrix on entry-level Android hardware — proven in the Dart test
+      harness against a fake transport, NOT yet on physical devices
+- [ ] ⏳ Notifications, vitals/device capture and the encounter workspace
+      on mobile (web already covers them; they reuse this outbox/engine)
 
 ## M5 — Pharmacy + Laboratory ✅ (2026-10-16)
 - [x] stock in batches with explicit expiry against the validated drug

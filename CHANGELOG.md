@@ -1,5 +1,56 @@
 # Changelog
 
+## M4 (2026-10-17) — Offline-first Android app (Flutter)
+
+### Added
+- **Offline core**: every mutation is an `OutboxOp` with a client-generated
+  UUID replayed as the server `Idempotency-Key`; one open op per dedupe key
+  (double-taps collapse); statuses `pending → inFlight → {applied, failed,
+  conflicted}` with explicit UI states **Saved on device · Pending sync ·
+  Syncing… · Synced · Conflict**. The engine classifies 2xx / 409-412 /
+  422 / 401 / 5xx exactly as the acceptance matrix requires, stops the run
+  on 401, and never resolves a conflict by last-write-wins.
+- **Encrypted local storage** (R4.2): the whole offline document (outbox,
+  directory cache, id map, Rx drafts) is sealed in **AES-256-GCM** — fresh
+  random 12-byte nonce per write, `HMS1` magic as additional authenticated
+  data, atomic temp-file + rename. The AES key and the session tokens live
+  in the **Android Keystore** (`flutter_secure_storage`), never in the
+  offline file. Tests prove: round trip, no plaintext byte at rest, tamper
+  detection, wrong-key rejection, atomic writes.
+- **Offline workflows** in one role-aware binary (Staff app: register →
+  queue → billing; Doctor app: Fast Rx):
+  - registration with device-side dedupe, immediately usable in the queue;
+  - OPD queue entry with per-day dedupe (no double-booking);
+  - Fast Rx **draft** from the validated drug catalog only (free-text
+    medication is impossible); **signing is online-only** — the API's
+    blocking allergy check and `prescription.sign` permission must run
+    server-side, so an offline draft can never become a signed Rx;
+  - billing: invoice lines queued with idempotency; totals are always
+    computed by the server.
+- **Local → server id map**: an entity created offline keeps a device id;
+  dependent mutations reference it as `$ref:<local>` and the sync engine
+  substitutes the real id just before pushing. An unresolved reference
+  DEFERS the dependent op (never a bogus id, never the wrong patient), and
+  `$ref` never reaches the API (`extra=forbid` models).
+- **Restart recovery**: outbox, directory cache, id map and drafts persist
+  on every change and are restored by `AppGraph.open()`; `flush()` waits
+  for the sealed write. Proven end-to-end: register + queue offline →
+  "restart" → one sync pushes both with the server id substituted.
+- **Release signing process**: `android/app/build.gradle.kts` reads the
+  git-ignored `android/key.properties` (and `*.keystore`/`*.jks` are
+  ignored too) — keys can never be committed; a clone without the file
+  builds with the debug key and is not distributable.
+- **Tests**: 40/40 (18 new) — outbox, engine matrix, id map (substitution,
+  deferral), encrypted store, restart recovery, and widget flows for the
+  offline registration/queue/Rx/billing slices incl. role gating.
+
+### Not claimed (explicitly)
+- On-device QA (airplane-mode visit, restart recovery, duplicate matrix on
+  entry-level hardware) is still open — everything above is proven in the
+  Dart test harness against a fake transport.
+- Notifications, vitals/device capture and the encounter workspace are not
+  in the app yet.
+
 ## M5 (2026-10-15) — Pharmacy + Laboratory (API)
 
 ### Added
