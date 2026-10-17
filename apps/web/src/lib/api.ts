@@ -419,3 +419,127 @@ export type LabOrderDetail = LabOrder & {
   specimens: LabSpecimen[];
   results: LabResult[];
 };
+
+// --- M6 IPD + operations types -----------------------------------------------
+export type Ward = {
+  id: string;
+  branch_id: string;
+  name: string;
+  code: string;
+  ward_type: string;
+  status: string;
+  created_at: string;
+  bed_count: number;
+  occupied_count: number;
+  available_count: number;
+};
+
+export type Bed = {
+  id: string;
+  ward_id: string;
+  label: string;
+  status: string;
+  admission_id: string | null;
+  patient_id: string | null;
+  admitted_at: string | null;
+};
+
+export type Admission = {
+  id: string;
+  patient_id: string;
+  branch_id: string;
+  ward_id: string;
+  bed_id: string;
+  reason: string;
+  attending_user_id: string | null;
+  status: string;
+  admitted_at: string;
+  discharge_outcome: string | null;
+  discharge_summary: string;
+  discharged_at: string | null;
+  patient_uhid: string;
+  patient_full_name: string;
+};
+
+export type NursingRecord = {
+  id: string;
+  admission_id: string;
+  note_type: string;
+  note: string;
+  bp_systolic: number | null;
+  bp_diastolic: number | null;
+  pulse: number | null;
+  respiratory_rate: number | null;
+  temperature_c: number | null;
+  spo2: number | null;
+  recorded_at: string;
+  recorded_by: string | null;
+};
+
+export type InventoryItem = {
+  id: string;
+  branch_id: string;
+  name: string;
+  sku: string;
+  unit: string;
+  quantity_on_hand: number;
+  reorder_level: number;
+  unit_cost: number;
+  status: string;
+  created_at: string;
+  low_stock: boolean;
+};
+
+export type InventoryMovement = {
+  id: number;
+  item_id: string;
+  movement_type: string;
+  direction: string;
+  quantity: number;
+  reason: string;
+  created_at: string;
+};
+
+export type Expense = {
+  id: string;
+  branch_id: string | null;
+  category: string;
+  amount: number;
+  expense_date: string;
+  description: string;
+  reference: string;
+  status: string;
+  void_reason: string;
+  created_at: string;
+};
+
+export type ReportSummary = {
+  from_date: string;
+  to_date: string;
+  ipd: {
+    currently_admitted: number;
+    admissions_in_period: number;
+    discharges_in_period: number;
+    deaths_in_period: number;
+    beds_total: number;
+    beds_occupied: number;
+    beds_maintenance: number;
+  };
+  finance: {
+    revenue: number;
+    refunds: number;
+    expenses: number;
+    net: number;
+    by_category: { category: string; total: number }[];
+  };
+  inventory: {
+    items_active: number;
+    low_stock: {
+      id: string;
+      name: string;
+      unit: string;
+      quantity_on_hand: number;
+      reorder_level: number;
+    }[];
+  };
+};

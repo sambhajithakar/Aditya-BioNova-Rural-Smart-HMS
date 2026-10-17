@@ -1,5 +1,60 @@
 # Changelog
 
+## M6 (2026-10-17) — IPD + operations (API + web)
+
+### Added
+- **Wards & beds**: wards per branch (typed: general/ICU/maternity/…)
+  and labelled beds whose `status` tracks *physical* availability only
+  (`available | maintenance | blocked`) — **occupancy is derived**, never
+  stored twice: two partial unique indexes guarantee at most ONE active
+  admission per bed and per patient, so a double-booking is refused by the
+  database itself (raw-SQL proof in tests), with the API answering 409
+  first.
+- **Admissions**: admit → transfer → discharge with `Idempotency-Key`
+  replay (double submit cannot admit twice); bed transfers write an
+  **append-only `admission_transfers` ledger** and move bed + ward together;
+  discharge needs a closed-list outcome + a mandatory summary and is the
+  ONLY legal transition — a discharged admission is completely frozen and
+  can never be deleted (column-level DB trigger; proven with raw SQL).
+- **Nursing**: inpatient vitals (range-checked as strictly as OPD vitals,
+  SpO₂ < 85 demands a documented escalation note) and free-text records
+  that are **append-only clinical evidence** and can only be added while
+  the admission is open (DB trigger backstop after discharge).
+- **Inventory** (general supplies, mirroring the pharmacy ledger rules):
+  item master per branch; every movement is ONE append-only
+  `inventory_movements` row, on-hand is trigger-maintained as SUM(in) −
+  SUM(out) so negative stock is impossible even via raw SQL; retired items
+  are frozen; low-stock alerts follow the reorder level.
+- **Expenses**: category/amount/date records whose amounts and dates are
+  FROZEN; the only legal change is `recorded → void` with a reason, and
+  DELETE is blocked — voided rows stay on the books for audit; per-category
+  period summary.
+- **Reports**: `GET /reports/summary` (tenant-scoped, `report.read`) —
+  IPD occupancy & flows, finance (succeeded payments − refunds − recorded
+  expenses, split by category), inventory health.
+- **RBAC**: 11 new permissions (`bed.*`, `admission.manage`, `discharge`,
+  `nursing.*`, `inventory.*`, `expense.*`, `report.read`) with role grants
+  continuing the least-privilege posture: doctor/nurse get the clinical
+  set, billing the money set — **support and auditor get zero M6 grants**.
+  All 8 new tenant tables carry strict RLS (zero-row proof for a foreign
+  tenant context).
+- **Web**: `/ipd` (bed board + admit/transfer/discharge/nursing),
+  `/inventory`, `/expenses`, `/reports` pages added to the app shell with
+  EN/मराठी/हिंदी strings.
+- **Tests**: 102/102 (13 new) — uniqueness backstops, state machine +
+  freezes, ledger invariants, idempotency, RBAC matrix, cross-tenant 404s
+  and raw RLS proofs over all 8 tables.
+- **Live verification through the web origin**: admitted → idempotent
+  replay → double-book 409 → nursing (+422 out of range) → transfer →
+  inventory receive + oversell 409 → expense record + void → discharge +
+  frozen-transfer 409 → report figures, all served through the page's own
+  `/api/v1` path.
+
+### Not claimed (explicitly)
+- Inpatient **day-rate/tariff billing** stays out of scope until the
+  pricing model is decided (outpatient billing covers invoicing today).
+- Playwright E2E remains pending repo-wide (headless browser in CI).
+
 ## M4 (2026-10-17) — Offline-first Android app (Flutter)
 
 ### Added

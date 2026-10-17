@@ -1521,3 +1521,474 @@ class LabResult(Base):
         Index("ix_labresult_org_order", "organization_id", "order_id"),
         Index("ix_labresult_org_status", "organization_id", "status"),
     )
+
+
+# --- M6: IPD + operations ---------------------------------------------------
+
+
+class Ward(Base):
+    """A ward (or unit) inside one branch: the parent of beds."""
+
+    __tablename__ = "wards"
+
+    id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    organization_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    branch_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("branches.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    code: Mapped[str] = mapped_column(String(30), nullable=False)
+    ward_type: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="general", server_default="general"
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="active", server_default="active"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "branch_id", "code",
+                         name="uq_ward_org_branch_code"),
+        CheckConstraint(
+            "ward_type IN ('general','icu','maternity','pediatric',"
+            "'isolation','day_care','private','other')",
+            name="ck_ward_type",
+        ),
+        CheckConstraint("status IN ('active','closed')", name="ck_ward_status"),
+        Index("ix_wards_org_branch", "organization_id", "branch_id"),
+    )
+
+
+class Bed(Base):
+    """Physical bed. ``status`` is physical availability only — OCCUPANCY
+    derives from an active admission (partial unique index on admissions)."""
+
+    __tablename__ = "beds"
+
+    id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    organization_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    ward_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("wards.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    label: Mapped[str] = mapped_column(String(30), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="available",
+        server_default="available",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "ward_id", "label",
+                         name="uq_bed_org_ward_label"),
+        CheckConstraint(
+            "status IN ('available','maintenance','blocked')",
+            name="ck_bed_status",
+        ),
+        Index("ix_beds_org_ward", "organization_id", "ward_id"),
+        Index("ix_beds_org_status", "organization_id", "status"),
+    )
+
+
+class Admission(Base):
+    """An inpatient stay: admitted -> discharged (its ONLY transition).
+
+    A discharged admission is completely frozen (DB trigger), admissions
+    can never be deleted, and partial unique indexes guarantee at most one
+    active admission per bed AND per patient.
+    """
+
+    __tablename__ = "admissions"
+
+    id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    organization_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    patient_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("patients.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    branch_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("branches.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    ward_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("wards.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    bed_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("beds.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    reason: Mapped[str] = mapped_column(
+        Text, nullable=False, default="", server_default=""
+    )
+    attending_user_id: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="admitted", server_default="admitted"
+    )
+    admitted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+    admitted_by: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    discharge_outcome: Mapped[str | None] = mapped_column(
+        String(30), nullable=True
+    )
+    discharge_summary: Mapped[str] = mapped_column(
+        Text, nullable=False, default="", server_default=""
+    )
+    discharged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    discharged_by: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("status IN ('admitted','discharged')",
+                        name="ck_admission_status"),
+        CheckConstraint(
+            "discharge_outcome IS NULL OR discharge_outcome IN "
+            "('recovered','improved','referred','left_against_advice',"
+            "'death','transfer_out')",
+            name="ck_admission_outcome",
+        ),
+        CheckConstraint(
+            "(status = 'admitted') = (discharged_at IS NULL)",
+            name="ck_admission_discharge_consistency",
+        ),
+        Index("ix_admissions_org_status", "organization_id", "status"),
+        Index("ix_admissions_org_patient", "organization_id", "patient_id"),
+        Index("ix_admissions_org_bed", "organization_id", "bed_id"),
+    )
+
+
+class AdmissionTransfer(Base):
+    """Append-only bed-transfer ledger for an admission (UPDATE/DELETE blocked)."""
+
+    __tablename__ = "admission_transfers"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    organization_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    admission_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("admissions.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    from_bed_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("beds.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    to_bed_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("beds.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    reason: Mapped[str] = mapped_column(
+        String(300), nullable=False, default="", server_default=""
+    )
+    transferred_by: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("from_bed_id <> to_bed_id",
+                        name="ck_transfer_distinct_beds"),
+        Index("ix_transfer_org_admission", "organization_id", "admission_id",
+              "id"),
+        PrimaryKeyConstraint("id"),
+    )
+
+
+class NursingRecord(Base):
+    """Append-only inpatient nursing note / vitals (immutable clinical
+    evidence; only addable while the admission is open — DB triggers)."""
+
+    __tablename__ = "nursing_records"
+
+    id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    organization_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    admission_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("admissions.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    note_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="note", server_default="note"
+    )
+    note: Mapped[str] = mapped_column(
+        Text, nullable=False, default="", server_default=""
+    )
+    bp_systolic: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bp_diastolic: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    pulse: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    respiratory_rate: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    temperature_c: Mapped[float | None] = mapped_column(
+        Numeric(4, 1), nullable=True
+    )
+    spo2: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+    recorded_by: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "note_type IN ('vitals','note','intake_output','care')",
+            name="ck_nursing_note_type",
+        ),
+        CheckConstraint(
+            "note <> '' OR bp_systolic IS NOT NULL OR pulse IS NOT NULL "
+            "OR temperature_c IS NOT NULL OR spo2 IS NOT NULL",
+            name="ck_nursing_has_content",
+        ),
+        CheckConstraint(
+            "bp_systolic IS NULL OR (bp_systolic BETWEEN 40 AND 300)",
+            name="ck_nursing_systolic",
+        ),
+        CheckConstraint(
+            "bp_diastolic IS NULL OR (bp_diastolic BETWEEN 20 AND 200)",
+            name="ck_nursing_diastolic",
+        ),
+        CheckConstraint(
+            "bp_systolic IS NULL OR bp_diastolic IS NULL "
+            "OR bp_systolic > bp_diastolic",
+            name="ck_nursing_bp_order",
+        ),
+        CheckConstraint("pulse IS NULL OR (pulse BETWEEN 20 AND 250)",
+                        name="ck_nursing_pulse"),
+        CheckConstraint(
+            "respiratory_rate IS NULL OR (respiratory_rate BETWEEN 5 AND 80)",
+            name="ck_nursing_rr",
+        ),
+        CheckConstraint(
+            "temperature_c IS NULL OR (temperature_c BETWEEN 30 AND 45)",
+            name="ck_nursing_temp",
+        ),
+        CheckConstraint("spo2 IS NULL OR (spo2 BETWEEN 50 AND 100)",
+                        name="ck_nursing_spo2"),
+        Index("ix_nursing_org_admission", "organization_id", "admission_id",
+              "recorded_at"),
+    )
+
+
+class InventoryItem(Base):
+    """General (non-pharmacy) supply item per branch. ``quantity_on_hand``
+    is a cache maintained by the ``apply_inventory_movement`` trigger."""
+
+    __tablename__ = "inventory_items"
+
+    id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    organization_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    branch_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("branches.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    sku: Mapped[str] = mapped_column(
+        String(60), nullable=False, default="", server_default=""
+    )
+    unit: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="pcs", server_default="pcs"
+    )
+    quantity_on_hand: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    reorder_level: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    unit_cost: Mapped[float] = mapped_column(
+        Numeric(12, 2), nullable=False, default=0, server_default="0"
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="active", server_default="active"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "branch_id", "name",
+                         name="uq_invitem_org_branch_name"),
+        CheckConstraint("quantity_on_hand >= 0",
+                        name="ck_invitem_on_hand_nonneg"),
+        CheckConstraint("reorder_level >= 0", name="ck_invitem_reorder_nonneg"),
+        CheckConstraint("unit_cost >= 0", name="ck_invitem_cost_nonneg"),
+        CheckConstraint("status IN ('active','retired')",
+                        name="ck_invitem_status"),
+        Index("ix_invitem_org_branch", "organization_id", "branch_id"),
+    )
+
+
+class InventoryMovement(Base):
+    """Append-only inventory ledger; trigger keeps on-hand = SUM(in)-SUM(out).
+
+    Mirrors the M5 ``stock_movements`` guarantees: negative stock is
+    impossible even via raw SQL.
+    """
+
+    __tablename__ = "inventory_movements"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    organization_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    item_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("inventory_items.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    movement_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    direction: Mapped[str] = mapped_column(String(4), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False)
+    reason: Mapped[str] = mapped_column(
+        String(300), nullable=False, default="", server_default=""
+    )
+    created_by: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "movement_type IN ('receive','issue','adjustment','return')",
+            name="ck_invmovement_type",
+        ),
+        CheckConstraint("direction IN ('in','out')",
+                        name="ck_invmovement_direction"),
+        CheckConstraint("quantity > 0", name="ck_invmovement_qty_positive"),
+        Index("ix_invmovement_org_item", "organization_id", "item_id", "id"),
+        PrimaryKeyConstraint("id"),
+    )
+
+
+class Expense(Base):
+    """Financial record: frozen amounts, only recorded -> void is a legal
+    change, DELETE blocked by trigger."""
+
+    __tablename__ = "expenses"
+
+    id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    organization_id: Mapped[UUID_PK] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("organizations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    branch_id: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("branches.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    category: Mapped[str] = mapped_column(String(30), nullable=False)
+    amount: Mapped[float] = mapped_column(Numeric(12, 2), nullable=False)
+    expense_date: Mapped[date] = mapped_column(Date, nullable=False)
+    description: Mapped[str] = mapped_column(
+        String(500), nullable=False, default="", server_default=""
+    )
+    reference: Mapped[str] = mapped_column(
+        String(100), nullable=False, default="", server_default=""
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="recorded", server_default="recorded"
+    )
+    void_reason: Mapped[str] = mapped_column(
+        String(300), nullable=False, default="", server_default=""
+    )
+    created_by: Mapped[UUID_PK | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="ck_expense_amount_positive"),
+        CheckConstraint(
+            "category IN ('rent','salaries','utilities','supplies',"
+            "'equipment','maintenance','service','transport','marketing',"
+            "'other')",
+            name="ck_expense_category",
+        ),
+        CheckConstraint("status IN ('recorded','void')",
+                        name="ck_expense_status"),
+        Index("ix_expense_org_date", "organization_id", "expense_date"),
+        Index("ix_expense_org_category", "organization_id", "category"),
+    )

@@ -32,8 +32,13 @@ Final Product Layout & Competitor Study 2026) plus the Master Prompt.
   Notifications ⬜ — blocked on the e-mail provider decision (M7 gate).
 - R3.3 ⬜ M5: pharmacy (stock/batch/expiry/FEFO), laboratory (orders,
   specimens, two-stage result verification).
-- R3.4 ⬜ M6: IPD admissions, wards, beds, nursing, discharge; inventory,
-  expenses, reports.
+- R3.4 ✅ M6: IPD admissions, wards, beds, nursing, discharge (derived
+  bed occupancy, one active admission per bed/patient enforced by partial
+  unique indexes, append-only transfer ledger, frozen discharge records,
+  append-only nursing notes); inventory with a trigger-maintained ledger
+  (no negative stock), expenses frozen with void-only corrections, and
+  tenant-scoped operational reports. Inpatient day-rate billing ⬜ pending
+  the owner's pricing decision.
 - R3.5 ✅ Non-negotiable clinical rules (from Blueprint): no silent
   post-sign changes (DB-trigger-enforced versioned amendments + audit), no
   medication selection from symptoms (nothing in the code maps symptoms to

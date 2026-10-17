@@ -16,7 +16,8 @@ implementation sessions continue milestone by milestone.)
 - [x] Tests: 33/33 (auth, RBAC, cross-tenant API + raw RLS proofs)
 - [x] Docs: all 11 required files + SBOM/licence register
 - [ ] ⏳ Dev-server preview sign-off (browser check by owner)
-- [ ] ⏳ Push to customer's GitHub org + first GitHub Actions run
+- [x] Push to customer's GitHub org + first GitHub Actions run (2026-10-17:
+      `sambhajithakar/Aditya-BioNova-Smart-HMS`, CI green on M1–M6)
 
 ## M2 — Registration → Appointments → OPD queue ✅ (2026-10-13)
 - [x] patients (+ supervised duplicate detection/merge), patient profile
@@ -134,8 +135,39 @@ implementation sessions continue milestone by milestone.)
       receive → alerts → OTC dispense with branch inference; lab order →
       specimen → import → four-eyes 403 → second-person verify → release
 
-## M6 — IPD + operations
-- [ ] wards/beds/nursing/discharge flow; inventory, expenses, reports
+## M6 — IPD + operations ✅ (2026-10-17)
+- [x] wards/beds per branch with derived occupancy: physical bed status
+      (available/maintenance/blocked) + TWO partial unique indexes so at
+      most one active admission per bed and per patient (raw-SQL backstop)
+- [x] admissions with `Idempotency-Key` replay; bed/ward transfers through
+      an append-only `admission_transfers` ledger; discharge with a
+      closed outcome list + mandatory summary; discharged admissions are
+      column-frozen and can never be deleted (DB triggers, raw-SQL proofs)
+- [x] nursing records: range-checked inpatient vitals (SpO₂ < 85 requires
+      an escalation note) + free-text notes — append-only and only legal
+      while the admission is open (trigger backstop after discharge)
+- [x] inventory: item master, append-only `inventory_movements` ledger with
+      trigger-maintained on-hand (negative stock impossible even via raw
+      SQL), retired items frozen, low-stock alerts by reorder level
+- [x] expenses: frozen amounts/dates, only `recorded → void` (reason
+      required) is legal, DELETE blocked, per-category period summary
+- [x] reports: `GET /reports/summary` — IPD occupancy + flows, finance
+      (succeeded payments − refunds − recorded expenses by category),
+      inventory health — all tenant-scoped behind `report.read`
+- [x] RBAC: 11 M6 permissions with least-privilege grants (doctor/nurse/
+      billing get their slice; support + auditor get ZERO M6 access);
+      strict RLS on all 8 new tables (zero-row proof for a foreign tenant)
+- [x] Web pages: /ipd (bed board, admit/transfer/discharge/nursing),
+      /inventory, /expenses, /reports — shell nav + EN/मराठी/हिंदी strings
+- [x] Tests: 102/102 (13 M6) — uniqueness/state-machine/freeze/ledger
+      proofs with raw SQL, idempotency replay, RBAC matrix, cross-tenant
+      404s for every new endpoint
+- [x] Live flow through the web origin: admit → idempotent replay →
+      double-book 409 → nursing (+422 out of range) → transfer →
+      receive/oversell 409 → expense record + void → discharge + frozen
+      409 → report figures
+- [ ] ⏳ Inpatient day-rate/tariff billing — out of scope until the owner
+      decides the pricing model (outpatient billing already covers invoices)
 
 ## M7 — SaaS commercial layer + hardening
 - [ ] plans/entitlements/trials/subscriptions, tenant export/offboarding
